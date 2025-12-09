@@ -14,6 +14,7 @@ fn get_indexes_dir() -> Result<PathBuf> {
 #[derive(Debug)]
 struct IndexInfo {
     hash: String,
+    #[allow(dead_code)]
     path: PathBuf,
     workspace: Option<String>,
     size_bytes: u64,

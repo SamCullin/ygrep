@@ -263,6 +263,7 @@ struct RankedResult {
     line_end: u64,
     is_chunk: bool,
     rank: usize,
+    #[allow(dead_code)]
     score: f32,
 }
 

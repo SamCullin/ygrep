@@ -39,7 +39,6 @@ impl FileWalker {
     /// Iterate over all indexable files in the directory tree
     pub fn walk(&mut self) -> impl Iterator<Item = WalkEntry> + '_ {
         let follow_links = self.config.follow_symlinks;
-        let ignore_patterns = self.config.ignore_patterns.clone();
 
         WalkDir::new(&self.root)
             .follow_links(follow_links)
@@ -206,35 +205,6 @@ fn is_hidden(entry: &walkdir::DirEntry) -> bool {
         .to_str()
         .map(|s| s.starts_with('.'))
         .unwrap_or(false)
-}
-
-/// Glob matching for directory patterns - used in filter_entry to skip entire directories
-fn glob_match_dir(pattern: &str, path: &str) -> bool {
-    // Handle **/dir/** patterns - directory name anywhere
-    if pattern.starts_with("**/") && pattern.ends_with("/**") {
-        let dir_name = &pattern[3..pattern.len()-3];
-        // Check if this is the directory or path ends with the directory
-        return path.ends_with(&format!("/{}", dir_name))
-            || path.ends_with(dir_name)
-            || path.contains(&format!("/{}/", dir_name));
-    }
-
-    // Handle **/something patterns - directory name at end
-    if pattern.starts_with("**/") {
-        let suffix = &pattern[3..];
-        // Remove trailing /** if present
-        let suffix = suffix.strip_suffix("/**").unwrap_or(suffix);
-        return path.ends_with(suffix) || path.ends_with(&format!("/{}", suffix));
-    }
-
-    // Handle something/** patterns - prefix match
-    if pattern.ends_with("/**") {
-        let prefix = &pattern[..pattern.len()-3];
-        return path.ends_with(prefix) || path.ends_with(&format!("/{}", prefix));
-    }
-
-    // Exact directory name match
-    path.ends_with(pattern) || path.ends_with(&format!("/{}", pattern))
 }
 
 /// Simple glob matching for ignore patterns (for files)
