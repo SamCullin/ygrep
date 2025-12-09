@@ -172,37 +172,47 @@ jobs:
 
           cd tap
           mkdir -p "$(dirname "${FORMULA_PATH}")"
-          cat <<EOF > "${FORMULA_PATH}"
-class Ygrep < Formula
-  desc "Fast, local, indexed code search for AI coding assistants"
-  homepage "https://github.com/${GITHUB_REPOSITORY}"
-  license "MIT"
-  version "${VER}"
-  version_scheme 1
+          cat <<'FORMULA' > "${FORMULA_PATH}"
+          class Ygrep < Formula
+            desc "Fast, local, indexed code search for AI coding assistants"
+            homepage "https://github.com/yetidevworks/ygrep"
+            license "MIT"
+            version "REPLACE_VERSION"
+            version_scheme 1
 
-  on_macos do
-    on_arm do
-      url "${TAP_URL}/ygrep-${VER}-darwin-arm64.tar.gz"
-      sha256 "${DARWIN_SHA}"
-    end
-  end
+            on_macos do
+              on_arm do
+                url "REPLACE_DARWIN_URL"
+                sha256 "REPLACE_DARWIN_SHA"
+              end
+            end
 
-  on_linux do
-    on_intel do
-      url "${TAP_URL}/ygrep-${VER}-linux-x86_64.tar.gz"
-      sha256 "${LINUX_X86_64_SHA}"
-    end
-  end
+            on_linux do
+              on_intel do
+                url "REPLACE_LINUX_URL"
+                sha256 "REPLACE_LINUX_SHA"
+              end
+            end
 
-  def install
-    bin.install "ygrep"
-  end
+            def install
+              bin.install "ygrep"
+            end
 
-  test do
-    assert_match "ygrep", shell_output("#{bin}/ygrep --version")
-  end
-end
-EOF
+            test do
+              assert_match "ygrep", shell_output("#{bin}/ygrep --version")
+            end
+          end
+          FORMULA
+
+          # Replace placeholders with actual values
+          sed -i "s|REPLACE_VERSION|${VER}|g" "${FORMULA_PATH}"
+          sed -i "s|REPLACE_DARWIN_URL|${TAP_URL}/ygrep-${VER}-darwin-arm64.tar.gz|g" "${FORMULA_PATH}"
+          sed -i "s|REPLACE_DARWIN_SHA|${DARWIN_SHA}|g" "${FORMULA_PATH}"
+          sed -i "s|REPLACE_LINUX_URL|${TAP_URL}/ygrep-${VER}-linux-x86_64.tar.gz|g" "${FORMULA_PATH}"
+          sed -i "s|REPLACE_LINUX_SHA|${LINUX_X86_64_SHA}|g" "${FORMULA_PATH}"
+
+          # Remove leading whitespace from formula
+          sed -i 's/^          //' "${FORMULA_PATH}"
 
       - name: Commit & push
         env:
