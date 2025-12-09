@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use notify_debouncer_full::{
     new_debouncer,
-    notify::{self, RecommendedWatcher, RecursiveMode},
-    DebounceEventResult, Debouncer, FileIdMap,
+    notify::RecursiveMode,
+    DebounceEventResult,
 };
 use parking_lot::Mutex;
 use tokio::sync::mpsc;
@@ -30,11 +30,31 @@ pub enum WatchEvent {
     Error(String),
 }
 
+// Platform-specific debouncer type
+#[cfg(target_os = "macos")]
+type PlatformDebouncer = notify_debouncer_full::Debouncer<
+    notify_debouncer_full::notify::FsEventWatcher,
+    notify_debouncer_full::FileIdMap,
+>;
+
+#[cfg(target_os = "linux")]
+type PlatformDebouncer = notify_debouncer_full::Debouncer<
+    notify_debouncer_full::notify::INotifyWatcher,
+    notify_debouncer_full::NoCache,
+>;
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+type PlatformDebouncer = notify_debouncer_full::Debouncer<
+    notify_debouncer_full::notify::RecommendedWatcher,
+    notify_debouncer_full::NoCache,
+>;
+
 /// File system watcher with debouncing
 pub struct FileWatcher {
     root: PathBuf,
+    #[allow(dead_code)]
     config: IndexerConfig,
-    debouncer: Debouncer<RecommendedWatcher, FileIdMap>,
+    debouncer: PlatformDebouncer,
     event_rx: mpsc::UnboundedReceiver<WatchEvent>,
     /// All paths being watched (root + symlink targets)
     watched_paths: Vec<PathBuf>,
