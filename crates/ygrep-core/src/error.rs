@@ -47,6 +47,9 @@ pub enum YgrepError {
 
     #[error("Index directory error: {0}")]
     IndexDirectory(#[from] tantivy::directory::error::OpenDirectoryError),
+
+    #[error("Watch error: {0}")]
+    WatchError(String),
 }
 
 pub type Result<T> = std::result::Result<T, YgrepError>;

@@ -78,6 +78,12 @@ pub enum Commands {
         #[arg(long)]
         detailed: bool,
     },
+
+    /// Watch for file changes and update index incrementally
+    Watch {
+        /// Workspace path (default: current directory)
+        path: Option<PathBuf>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
@@ -121,6 +127,10 @@ fn main() -> Result<()> {
         }
         Some(Commands::Status { detailed }) => {
             commands::status::run(&workspace, detailed)?;
+        }
+        Some(Commands::Watch { path }) => {
+            let target = path.unwrap_or(workspace);
+            commands::watch::run(&target)?;
         }
         None => {
             // Default: treat trailing args as search query

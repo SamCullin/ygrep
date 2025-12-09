@@ -13,9 +13,11 @@ pub mod error;
 pub mod fs;
 pub mod index;
 pub mod search;
+pub mod watcher;
 
 pub use config::Config;
 pub use error::{Result, YgrepError};
+pub use watcher::{FileWatcher, WatchEvent};
 
 use std::path::Path;
 use std::sync::Arc;
@@ -264,6 +266,69 @@ impl Workspace {
     /// Check if the workspace has been indexed
     pub fn is_indexed(&self) -> bool {
         self.index_path.join("meta.json").exists()
+    }
+
+    /// Index or re-index a single file (for incremental updates)
+    pub fn index_file(&self, path: &Path) -> Result<()> {
+        // Check if file is under workspace root
+        if !path.starts_with(&self.root) {
+            return Err(YgrepError::InvalidPath(path.to_path_buf()));
+        }
+
+        // Create indexer and index the file
+        let indexer = index::Indexer::new(
+            self.config.indexer.clone(),
+            self.index.clone(),
+            &self.root,
+        )?;
+
+        match indexer.index_file(path) {
+            Ok(_doc_id) => {
+                indexer.commit()?;
+                tracing::debug!("Indexed: {}", path.display());
+                Ok(())
+            }
+            Err(YgrepError::FileTooLarge { .. }) => {
+                tracing::debug!("Skipped (too large): {}", path.display());
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Delete a file from the index (for incremental updates)
+    pub fn delete_file(&self, path: &Path) -> Result<()> {
+        use tantivy::Term;
+
+        // Get the relative path as doc_id
+        let relative_path = path
+            .strip_prefix(&self.root)
+            .unwrap_or(path)
+            .to_string_lossy();
+
+        let schema = self.index.schema();
+        let doc_id_field = schema.get_field("doc_id").map_err(|_| {
+            YgrepError::Config("doc_id field not found in schema".to_string())
+        })?;
+
+        let term = Term::from_field_text(doc_id_field, &relative_path);
+
+        let mut writer = self.index.writer::<tantivy::TantivyDocument>(50_000_000)?;
+        writer.delete_term(term);
+        writer.commit()?;
+
+        tracing::debug!("Deleted from index: {}", path.display());
+        Ok(())
+    }
+
+    /// Create a file watcher for this workspace
+    pub fn create_watcher(&self) -> Result<FileWatcher> {
+        FileWatcher::new(self.root.clone(), self.config.indexer.clone())
+    }
+
+    /// Get the indexer config
+    pub fn indexer_config(&self) -> &config::IndexerConfig {
+        &self.config.indexer
     }
 }
 
