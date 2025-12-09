@@ -31,3 +31,4 @@ clap = { workspace = true }
 
 # Utils
 dirs = { workspace = true }
+chrono = { workspace = true }

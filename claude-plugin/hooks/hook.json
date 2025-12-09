@@ -6,19 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/ygrep_watch.py",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/ygrep_watch_kill.py",
-            "timeout": 10
+            "command": "echo '[ygrep] Indexing...' && ygrep index && echo '[ygrep] Done'",
+            "timeout": 60
           }
         ]
       }

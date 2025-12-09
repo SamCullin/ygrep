@@ -38,7 +38,7 @@ pub enum Commands {
         query: String,
 
         /// Maximum results
-        #[arg(short = 'n', long, default_value = "10")]
+        #[arg(short = 'n', long, default_value = "100")]
         limit: usize,
 
         /// Filter by file extension (e.g., -e rs -e ts)
@@ -84,6 +84,26 @@ pub enum Commands {
         /// Workspace path (default: current directory)
         path: Option<PathBuf>,
     },
+
+    /// Install ygrep for a specific tool/client
+    #[command(subcommand)]
+    Install(InstallTarget),
+
+    /// Uninstall ygrep from a specific tool/client
+    #[command(subcommand)]
+    Uninstall(InstallTarget),
+}
+
+#[derive(Subcommand, Clone)]
+pub enum InstallTarget {
+    /// Install/uninstall for Claude Code
+    ClaudeCode,
+    /// Install/uninstall for OpenCode
+    Opencode,
+    /// Install/uninstall for Codex
+    Codex,
+    /// Install/uninstall for Factory Droid
+    Droid,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
@@ -131,6 +151,22 @@ fn main() -> Result<()> {
         Some(Commands::Watch { path }) => {
             let target = path.unwrap_or(workspace);
             commands::watch::run(&target)?;
+        }
+        Some(Commands::Install(target)) => {
+            match target {
+                InstallTarget::ClaudeCode => commands::install::install_claude_code()?,
+                InstallTarget::Opencode => commands::install::install_opencode()?,
+                InstallTarget::Codex => commands::install::install_codex()?,
+                InstallTarget::Droid => commands::install::install_droid()?,
+            }
+        }
+        Some(Commands::Uninstall(target)) => {
+            match target {
+                InstallTarget::ClaudeCode => commands::install::uninstall_claude_code()?,
+                InstallTarget::Opencode => commands::install::uninstall_opencode()?,
+                InstallTarget::Codex => commands::install::uninstall_codex()?,
+                InstallTarget::Droid => commands::install::uninstall_droid()?,
+            }
         }
         None => {
             // Default: treat trailing args as search query

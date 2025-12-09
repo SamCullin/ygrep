@@ -59,22 +59,24 @@ impl SearchResult {
     pub fn format_ai(&self) -> String {
         let mut output = String::new();
 
-        output.push_str(&format!("# {} results ({:.1}ms)\n\n", self.hits.len(), self.query_time_ms as f64));
+        output.push_str(&format!("# {} results\n\n", self.hits.len()));
 
-        for (i, hit) in self.hits.iter().enumerate() {
-            // Path and line range
-            output.push_str(&format!("{}. `{}:{}`\n", i + 1, hit.path, hit.lines_str()));
+        for hit in &self.hits {
+            // Header: path:line_range
+            output.push_str(&format!("{}:{}\n", hit.path, hit.lines_str()));
 
-            // Snippet (truncated)
-            let snippet = truncate_snippet(&hit.snippet, 200);
-            if !snippet.is_empty() {
-                output.push_str("```\n");
-                output.push_str(&snippet);
-                if !snippet.ends_with('\n') {
-                    output.push('\n');
-                }
-                output.push_str("```\n\n");
+            // Show first few lines of snippet with line numbers
+            for (i, line) in hit.snippet.lines().take(3).enumerate() {
+                let line_num = hit.line_start + i as u64;
+                let trimmed = line.trim();
+                let preview = if trimmed.len() > 80 {
+                    format!("{}...", &trimmed[..80])
+                } else {
+                    trimmed.to_string()
+                };
+                output.push_str(&format!("  {}: {}\n", line_num, preview));
             }
+            output.push('\n');
         }
 
         output
@@ -167,6 +169,6 @@ mod tests {
 
         let output = result.format_ai();
         assert!(output.contains("# 1 results"));
-        assert!(output.contains("src/main.rs:1-10"));
+        assert!(output.contains("src/main.rs:1"));
     }
 }
