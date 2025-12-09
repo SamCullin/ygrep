@@ -87,11 +87,29 @@ impl FileWatcher {
 
     /// Start watching the directory
     pub fn start(&mut self) -> Result<()> {
+        // Watch the root directory
         self.debouncer
             .watch(&self.root, RecursiveMode::Recursive)
             .map_err(|e| YgrepError::WatchError(e.to_string()))?;
 
         tracing::info!("Started watching: {}", self.root.display());
+
+        // Find and watch symlinked directories
+        // notify doesn't follow symlinks, so we need to watch targets separately
+        if self.config.follow_symlinks {
+            let symlink_targets = find_symlink_targets(&self.root);
+            for target in symlink_targets {
+                match self.debouncer.watch(&target, RecursiveMode::Recursive) {
+                    Ok(()) => {
+                        tracing::info!("Also watching symlink target: {}", target.display());
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to watch symlink target {}: {}", target.display(), e);
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -180,6 +198,46 @@ fn is_hidden(path: &Path) -> bool {
             .map(|s| s.starts_with('.'))
             .unwrap_or(false)
     })
+}
+
+/// Find all symlink targets in a directory tree
+/// Returns the canonical paths of directories that are symlinked
+fn find_symlink_targets(root: &Path) -> Vec<PathBuf> {
+    use std::collections::HashSet;
+    use walkdir::WalkDir;
+
+    let mut targets = HashSet::new();
+
+    for entry in WalkDir::new(root)
+        .follow_links(false) // Don't follow links during walk
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+
+        // Check if this is a symlink to a directory
+        if path.is_symlink() {
+            if let Ok(target) = std::fs::read_link(path) {
+                // Resolve to absolute path
+                let absolute_target = if target.is_absolute() {
+                    target
+                } else {
+                    path.parent()
+                        .map(|p| p.join(&target))
+                        .unwrap_or(target)
+                };
+
+                // Canonicalize to resolve any .. or . components
+                if let Ok(canonical) = std::fs::canonicalize(&absolute_target) {
+                    if canonical.is_dir() && !is_ignored_dir(&canonical) {
+                        targets.insert(canonical);
+                    }
+                }
+            }
+        }
+    }
+
+    targets.into_iter().collect()
 }
 
 /// Check if path is in an ignored directory
