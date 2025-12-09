@@ -6,6 +6,7 @@ A fast, local, indexed code search tool optimized for AI coding assistants. Writ
 
 - **Literal text matching** - Works like grep, special characters included (`{% block`, `->get(`, etc.)
 - **Fast indexed search** - Tantivy-powered BM25 ranking
+- **File watching** - Incremental index updates on file changes
 - **Optional semantic search** - HNSW vector index with local embeddings (bge-small-en-v1.5)
 - **Symlink handling** - Follows symlinks with cycle detection
 - **AI-optimized output** - Clean, parseable results for LLM tools
@@ -32,6 +33,10 @@ ygrep search "authentication"
 # With options
 ygrep search "error" -n 20         # Limit results
 ygrep search "config" -e rs -e toml # Filter by extension
+
+# Watch for changes (incremental updates)
+ygrep watch                        # Watch current directory
+ygrep watch /path/to/project       # Watch specific directory
 
 # Check status
 ygrep status
