@@ -17,3 +17,6 @@ Thumbs.db
 
 # ML model cache
 .fastembed_cache/
+
+# Local plan file
+.claude-plan.md
