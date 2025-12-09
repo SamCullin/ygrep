@@ -36,6 +36,8 @@ pub struct FileWatcher {
     config: IndexerConfig,
     debouncer: Debouncer<RecommendedWatcher, FileIdMap>,
     event_rx: mpsc::UnboundedReceiver<WatchEvent>,
+    /// All paths being watched (root + symlink targets)
+    watched_paths: Vec<PathBuf>,
 }
 
 impl FileWatcher {
@@ -44,8 +46,19 @@ impl FileWatcher {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let event_tx = Arc::new(Mutex::new(event_tx));
 
+        // Find symlink targets upfront so we can pass them to the event handler
+        let symlink_targets = if config.follow_symlinks {
+            find_symlink_targets(&root)
+        } else {
+            vec![]
+        };
+
+        // Build list of all watched paths
+        let mut watched_paths = vec![root.clone()];
+        watched_paths.extend(symlink_targets.clone());
+        let watched_paths_for_closure = watched_paths.clone();
+
         // Clone for the closure
-        let root_clone = root.clone();
         let config_clone = config.clone();
 
         // Create debouncer with 500ms delay
@@ -59,7 +72,7 @@ impl FileWatcher {
                         for event in events {
                             let events = process_notify_event(
                                 &event,
-                                &root_clone,
+                                &watched_paths_for_closure,
                                 &config_clone,
                             );
                             for e in events {
@@ -82,29 +95,27 @@ impl FileWatcher {
             config,
             debouncer,
             event_rx,
+            watched_paths,
         })
     }
 
     /// Start watching the directory
     pub fn start(&mut self) -> Result<()> {
-        // Watch the root directory
-        self.debouncer
-            .watch(&self.root, RecursiveMode::Recursive)
-            .map_err(|e| YgrepError::WatchError(e.to_string()))?;
-
-        tracing::info!("Started watching: {}", self.root.display());
-
-        // Find and watch symlinked directories
-        // notify doesn't follow symlinks, so we need to watch targets separately
-        if self.config.follow_symlinks {
-            let symlink_targets = find_symlink_targets(&self.root);
-            for target in symlink_targets {
-                match self.debouncer.watch(&target, RecursiveMode::Recursive) {
-                    Ok(()) => {
-                        tracing::info!("Also watching symlink target: {}", target.display());
+        // Watch all paths (root + symlink targets found during construction)
+        for path in &self.watched_paths {
+            match self.debouncer.watch(path, RecursiveMode::Recursive) {
+                Ok(()) => {
+                    if path == &self.root {
+                        tracing::info!("Started watching: {}", path.display());
+                    } else {
+                        tracing::info!("Also watching symlink target: {}", path.display());
                     }
-                    Err(e) => {
-                        tracing::warn!("Failed to watch symlink target {}: {}", target.display(), e);
+                }
+                Err(e) => {
+                    if path == &self.root {
+                        return Err(YgrepError::WatchError(e.to_string()));
+                    } else {
+                        tracing::warn!("Failed to watch symlink target {}: {}", path.display(), e);
                     }
                 }
             }
@@ -137,7 +148,7 @@ impl FileWatcher {
 /// Process a notify event and convert to WatchEvent(s)
 fn process_notify_event(
     event: &notify_debouncer_full::DebouncedEvent,
-    root: &Path,
+    watched_paths: &[PathBuf],
     config: &IndexerConfig,
 ) -> Vec<WatchEvent> {
     use notify::EventKind;
@@ -145,8 +156,9 @@ fn process_notify_event(
     let mut events = Vec::new();
 
     for path in &event.paths {
-        // Skip if path is not under root
-        if !path.starts_with(root) {
+        // Skip if path is not under any watched path
+        let is_under_watched = watched_paths.iter().any(|wp| path.starts_with(wp));
+        if !is_under_watched {
             continue;
         }
 
