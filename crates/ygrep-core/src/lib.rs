@@ -269,12 +269,8 @@ impl Workspace {
     }
 
     /// Index or re-index a single file (for incremental updates)
+    /// Note: path can be under workspace root OR under a symlink target
     pub fn index_file(&self, path: &Path) -> Result<()> {
-        // Check if file is under workspace root
-        if !path.starts_with(&self.root) {
-            return Err(YgrepError::InvalidPath(path.to_path_buf()));
-        }
-
         // Create indexer and index the file
         let indexer = index::Indexer::new(
             self.config.indexer.clone(),
