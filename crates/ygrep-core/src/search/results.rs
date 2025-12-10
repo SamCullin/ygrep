@@ -1,5 +1,26 @@
 use serde::{Deserialize, Serialize};
 
+/// Type of match for a search hit
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MatchType {
+    /// Matched via BM25 text search
+    Text,
+    /// Matched via semantic vector search
+    Semantic,
+    /// Matched by both text and semantic search
+    Hybrid,
+}
+
+impl std::fmt::Display for MatchType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MatchType::Text => write!(f, "text"),
+            MatchType::Semantic => write!(f, "semantic"),
+            MatchType::Hybrid => write!(f, "hybrid"),
+        }
+    }
+}
+
 /// Result of a search operation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
@@ -9,6 +30,12 @@ pub struct SearchResult {
     pub total: usize,
     /// Query execution time in milliseconds
     pub query_time_ms: u64,
+    /// Number of hits from text search
+    #[serde(default)]
+    pub text_hits: usize,
+    /// Number of hits from semantic search
+    #[serde(default)]
+    pub semantic_hits: usize,
 }
 
 /// A single search hit
@@ -27,6 +54,13 @@ pub struct SearchHit {
     pub is_chunk: bool,
     /// Document ID
     pub doc_id: String,
+    /// Type of match (text, semantic, or hybrid)
+    #[serde(default = "default_match_type")]
+    pub match_type: MatchType,
+}
+
+fn default_match_type() -> MatchType {
+    MatchType::Text
 }
 
 impl SearchHit {
@@ -47,6 +81,8 @@ impl SearchResult {
             hits: vec![],
             total: 0,
             query_time_ms: 0,
+            text_hits: 0,
+            semantic_hits: 0,
         }
     }
 
@@ -55,11 +91,74 @@ impl SearchResult {
         self.hits.is_empty()
     }
 
-    /// Format results for AI-optimized output (minimal tokens)
+    /// Format search type summary (e.g., "5 text + 3 semantic" or "text")
+    fn search_type_summary(&self) -> String {
+        if self.text_hits > 0 && self.semantic_hits > 0 {
+            format!("{} text + {} semantic", self.text_hits, self.semantic_hits)
+        } else if self.semantic_hits > 0 {
+            "semantic".to_string()
+        } else {
+            "text".to_string()
+        }
+    }
+
+    /// Normalize score for display (RRF scores are tiny ~0.01, we want 0-100 range)
+    fn display_score(score: f32) -> f32 {
+        // RRF scores max out around 0.016 for K=60, scale to 0-100
+        // A document appearing in both BM25 and vector results at rank 1 would be ~0.033
+        (score * 3000.0).min(99.9)
+    }
+
+    /// Format results for AI-optimized output (minimal tokens, maximum density)
     pub fn format_ai(&self) -> String {
         let mut output = String::new();
 
-        output.push_str(&format!("# {} results\n\n", self.hits.len()));
+        // Header with count and search type breakdown
+        output.push_str(&format!("# {} results ({})\n\n", self.hits.len(), self.search_type_summary()));
+
+        for hit in &self.hits {
+            // Single line format: path:line (score%) [match_type]
+            let score_pct = Self::display_score(hit.score);
+            let match_indicator = match hit.match_type {
+                MatchType::Hybrid => " +",  // both text and semantic
+                MatchType::Semantic => " ~", // semantic only
+                MatchType::Text => "",       // text only (default, no indicator)
+            };
+            output.push_str(&format!("{}:{} ({:.0}%){}\n", hit.path, hit.line_start, score_pct, match_indicator));
+
+            // Show only the first matching line, trimmed
+            if let Some(first_line) = hit.snippet.lines().next() {
+                let trimmed = first_line.trim();
+                let preview = if trimmed.len() > 100 {
+                    let boundary = trimmed.floor_char_boundary(100);
+                    format!("{}...", &trimmed[..boundary])
+                } else {
+                    trimmed.to_string()
+                };
+                output.push_str(&format!("  {}\n", preview));
+            }
+            output.push('\n');
+        }
+
+        output
+    }
+
+    /// Format results as JSON (includes all metadata)
+    pub fn format_json(&self) -> String {
+        serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".to_string())
+    }
+
+    /// Format results for human-readable output (more context, line numbers)
+    pub fn format_pretty(&self) -> String {
+        let mut output = String::new();
+
+        // Header with breakdown
+        let type_info = if self.text_hits > 0 || self.semantic_hits > 0 {
+            format!(" ({})", self.search_type_summary())
+        } else {
+            String::new()
+        };
+        output.push_str(&format!("# {} results{}\n\n", self.hits.len(), type_info));
 
         for hit in &self.hits {
             // Header: path:line_range
@@ -82,47 +181,6 @@ impl SearchResult {
 
         output
     }
-
-    /// Format results as JSON
-    pub fn format_json(&self) -> String {
-        serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".to_string())
-    }
-
-    /// Format results for human-readable output
-    pub fn format_pretty(&self) -> String {
-        let mut output = String::new();
-
-        output.push_str(&format!("Found {} results in {:.1}ms\n", self.hits.len(), self.query_time_ms as f64));
-        output.push_str(&"─".repeat(50));
-        output.push('\n');
-
-        for hit in &self.hits {
-            output.push_str(&format!("\n📄 {} (lines {})\n", hit.path, hit.lines_str()));
-            output.push_str(&format!("   Score: {:.2}\n", hit.score));
-
-            let snippet = truncate_snippet(&hit.snippet, 300);
-            for line in snippet.lines().take(5) {
-                output.push_str(&format!("   │ {}\n", line));
-            }
-        }
-
-        output
-    }
-}
-
-/// Truncate a snippet to a maximum character length
-fn truncate_snippet(s: &str, max_chars: usize) -> String {
-    if s.len() <= max_chars {
-        return s.to_string();
-    }
-
-    // Find a good breaking point (newline)
-    if let Some(pos) = s[..max_chars].rfind('\n') {
-        return s[..pos].to_string();
-    }
-
-    // Fall back to character limit
-    s.chars().take(max_chars).collect()
 }
 
 #[cfg(test)]
@@ -162,14 +220,18 @@ mod tests {
                     score: 0.9,
                     is_chunk: false,
                     doc_id: "abc".to_string(),
+                    match_type: MatchType::Text,
                 },
             ],
             total: 1,
             query_time_ms: 15,
+            text_hits: 1,
+            semantic_hits: 0,
         };
 
         let output = result.format_ai();
         assert!(output.contains("# 1 results"));
         assert!(output.contains("src/main.rs:1"));
+        assert!(output.contains("(90%)"));
     }
 }

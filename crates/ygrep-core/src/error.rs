@@ -50,6 +50,9 @@ pub enum YgrepError {
 
     #[error("Watch error: {0}")]
     WatchError(String),
+
+    #[error("Search error: {0}")]
+    Search(String),
 }
 
 pub type Result<T> = std::result::Result<T, YgrepError>;

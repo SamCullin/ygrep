@@ -4,6 +4,6 @@ mod results;
 mod hybrid;
 
 pub use searcher::{Searcher, SearchFilters};
-pub use results::{SearchResult, SearchHit};
+pub use results::{SearchResult, SearchHit, MatchType};
 #[cfg(feature = "embeddings")]
 pub use hybrid::HybridSearcher;

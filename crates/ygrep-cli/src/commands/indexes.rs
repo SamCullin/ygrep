@@ -102,6 +102,10 @@ pub fn list() -> Result<()> {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
+            // Skip incomplete indexes (those without workspace.json - never actually indexed)
+            if !path.join("workspace.json").exists() {
+                continue;
+            }
             if let Some(hash) = path.file_name().and_then(|n| n.to_str()) {
                 if let Ok(info) = read_index_info(hash, &path) {
                     total_size += info.size_bytes;

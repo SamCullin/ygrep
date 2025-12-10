@@ -42,3 +42,4 @@ dirs = { workspace = true }
 walkdir = { workspace = true }
 chrono = { workspace = true }
 indicatif = { workspace = true }
+regex = { workspace = true }

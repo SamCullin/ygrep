@@ -5,19 +5,21 @@ use ygrep_core::{Workspace, WatchEvent};
 pub fn run(workspace_path: &Path) -> Result<()> {
     eprintln!("Opening workspace {}...", workspace_path.display());
 
-    let workspace = Workspace::open(workspace_path)
-        .context("Failed to open workspace")?;
+    // Open existing workspace (fails if not indexed)
+    let workspace = match Workspace::open(workspace_path) {
+        Ok(ws) => ws,
+        Err(_) => {
+            eprintln!("Workspace not indexed: {}", workspace_path.display());
+            eprintln!();
+            eprintln!("To watch this workspace, first index it:");
+            eprintln!("  ygrep index              # Text-only (fast)");
+            eprintln!("  ygrep index --semantic   # With semantic search (slower, better results)");
+            std::process::exit(1);
+        }
+    };
 
     // Read the stored semantic flag
     let use_semantic = workspace.stored_semantic_flag().unwrap_or(false);
-
-    // Ensure workspace is indexed first
-    if !workspace.is_indexed() {
-        eprintln!("Workspace not indexed. Running initial index...");
-        let stats = workspace.index_all()
-            .context("Failed to index workspace")?;
-        eprintln!("Indexed {} files.", stats.indexed);
-    }
 
     let mode = if use_semantic { "semantic" } else { "text" };
     eprintln!("Starting file watcher (mode: {})...", mode);

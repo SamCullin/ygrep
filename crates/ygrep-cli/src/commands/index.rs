@@ -9,8 +9,9 @@ pub fn run(workspace_path: &Path, rebuild: bool, semantic_flag: bool, text_flag:
     eprintln!("Indexing {}...", workspace_path.display());
 
     // Open workspace first to read stored flag (before potential rebuild)
+    // Use create() here since we may need to create the index
     let stored_semantic = if !rebuild {
-        Workspace::open(workspace_path)
+        Workspace::create(workspace_path)
             .ok()
             .and_then(|ws| ws.stored_semantic_flag())
     } else {
@@ -20,7 +21,7 @@ pub fn run(workspace_path: &Path, rebuild: bool, semantic_flag: bool, text_flag:
     if rebuild {
         eprintln!("Rebuilding index from scratch...");
         // Delete existing index directory
-        if let Ok(workspace) = Workspace::open(workspace_path) {
+        if let Ok(workspace) = Workspace::create(workspace_path) {
             let index_path = workspace.index_path().to_path_buf();
             drop(workspace); // Release the workspace before deleting
             if index_path.exists() {
@@ -55,9 +56,9 @@ pub fn run(workspace_path: &Path, rebuild: bool, semantic_flag: bool, text_flag:
         eprintln!("(converting to text-only index)");
     }
 
-    // Open workspace (creates fresh index if rebuilt)
-    let workspace = Workspace::open(workspace_path)
-        .context("Failed to open workspace")?;
+    // Create or open workspace for indexing
+    let workspace = Workspace::create(workspace_path)
+        .context("Failed to create workspace")?;
 
     // Index all files
     let stats = workspace.index_all_with_options(with_embeddings)

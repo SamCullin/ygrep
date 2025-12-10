@@ -11,7 +11,7 @@ use crate::embeddings::{EmbeddingModel, EmbeddingCache};
 use crate::error::Result;
 use crate::index::schema::SchemaFields;
 use crate::index::VectorIndex;
-use super::results::{SearchResult, SearchHit};
+use super::results::{SearchResult, SearchHit, MatchType};
 
 /// Hybrid searcher combining BM25 text search and vector similarity search
 pub struct HybridSearcher {
@@ -75,12 +75,18 @@ impl HybridSearcher {
             .take(limit)
             .collect();
 
+        // Count text vs semantic hits
+        let text_hits = hits.iter().filter(|h| matches!(h.match_type, MatchType::Text | MatchType::Hybrid)).count();
+        let semantic_hits = hits.iter().filter(|h| matches!(h.match_type, MatchType::Semantic | MatchType::Hybrid)).count();
+
         let query_time_ms = start.elapsed().as_millis() as u64;
 
         Ok(SearchResult {
             total: hits.len(),
             hits,
             query_time_ms,
+            text_hits,
+            semantic_hits,
         })
     }
 
@@ -236,6 +242,14 @@ impl HybridSearcher {
                 let actual_line_start = fused.result.line_start + match_offset as u64;
                 let actual_line_end = actual_line_start + line_count.saturating_sub(1) as u64;
 
+                // Determine match type based on which sources contributed
+                let match_type = match (fused.bm25_rrf > 0.0, fused.vector_rrf > 0.0) {
+                    (true, true) => MatchType::Hybrid,
+                    (true, false) => MatchType::Text,
+                    (false, true) => MatchType::Semantic,
+                    (false, false) => MatchType::Text, // shouldn't happen
+                };
+
                 SearchHit {
                     path: fused.result.path,
                     line_start: actual_line_start,
@@ -244,6 +258,7 @@ impl HybridSearcher {
                     score: total_score,
                     is_chunk: fused.result.is_chunk,
                     doc_id: fused.result.doc_id,
+                    match_type,
                 }
             })
             .collect();

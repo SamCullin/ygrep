@@ -56,26 +56,56 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    /// Open or create a workspace for the given directory
+    /// Open an existing workspace (fails if not indexed)
     pub fn open(root: &Path) -> Result<Self> {
         let config = Config::load();
-        Self::open_with_config(root, config)
+        Self::open_internal(root, config, false)
+    }
+
+    /// Open an existing workspace with custom config (fails if not indexed)
+    pub fn open_with_config(root: &Path, config: Config) -> Result<Self> {
+        Self::open_internal(root, config, false)
+    }
+
+    /// Create or open a workspace for indexing
+    pub fn create(root: &Path) -> Result<Self> {
+        let config = Config::load();
+        Self::open_internal(root, config, true)
+    }
+
+    /// Create or open a workspace with custom config for indexing
+    pub fn create_with_config(root: &Path, config: Config) -> Result<Self> {
+        Self::open_internal(root, config, true)
     }
 
     /// Open or create a workspace with custom config
-    pub fn open_with_config(root: &Path, config: Config) -> Result<Self> {
+    /// If create is false, returns an error if the index doesn't exist
+    fn open_internal(root: &Path, config: Config, create: bool) -> Result<Self> {
         let root = std::fs::canonicalize(root)?;
 
-        // Create index directory based on workspace path hash
+        // Calculate index directory path based on workspace path hash
         let workspace_hash = hash_path(&root);
         let index_path = config.indexer.data_dir.join("indexes").join(&workspace_hash);
-        std::fs::create_dir_all(&index_path)?;
+
+        // Check if workspace has been properly indexed (workspace.json is written after indexing)
+        let workspace_indexed = index_path.join("workspace.json").exists();
+        // Check if Tantivy files exist (meta.json is created by Tantivy)
+        let tantivy_exists = index_path.join("meta.json").exists();
+
+        // If not creating and workspace not indexed, return error
+        if !create && !workspace_indexed {
+            return Err(YgrepError::Config(
+                format!("Workspace not indexed: {}", root.display())
+            ));
+        }
 
         // Open or create Tantivy index
         let schema = index::build_document_schema();
-        let index = if index_path.join("meta.json").exists() {
+        let index = if tantivy_exists {
             Index::open_in_dir(&index_path)?
         } else {
+            // Create directory only when explicitly creating the index
+            std::fs::create_dir_all(&index_path)?;
             Index::create_in_dir(&index_path, schema)?
         };
 
@@ -293,10 +323,11 @@ impl Workspace {
         limit: Option<usize>,
         extensions: Option<Vec<String>>,
         paths: Option<Vec<String>>,
+        use_regex: bool,
     ) -> Result<search::SearchResult> {
         let searcher = search::Searcher::new(self.config.search.clone(), self.index.clone());
         let filters = search::SearchFilters { extensions, paths };
-        searcher.search_filtered(query, limit, filters)
+        searcher.search_filtered(query, limit, filters, use_regex)
     }
 
     /// Hybrid search combining BM25 and vector search
@@ -335,8 +366,9 @@ impl Workspace {
     }
 
     /// Check if the workspace has been indexed
+    /// (workspace.json is only created after actual indexing, not just opening)
     pub fn is_indexed(&self) -> bool {
-        self.index_path.join("meta.json").exists()
+        self.index_path.join("workspace.json").exists()
     }
 
     /// Index or re-index a single file (for incremental updates)

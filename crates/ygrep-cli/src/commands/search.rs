@@ -10,24 +10,23 @@ pub fn run(
     limit: usize,
     extensions: Vec<String>,
     paths: Vec<String>,
+    use_regex: bool,
     _show_scores: bool,
     text_only: bool,
     format: OutputFormat,
 ) -> Result<()> {
-    // Open workspace
-    let workspace = Workspace::open(workspace_path)
-        .context("Failed to open workspace")?;
-
-    // Check if indexed
-    if !workspace.is_indexed() {
-        eprintln!("Workspace not indexed. Run `ygrep index` first.");
-        eprintln!("Indexing now...");
-
-        let stats = workspace.index_all()
-            .context("Failed to index workspace")?;
-
-        eprintln!("Indexed {} files ({} skipped, {} errors)", stats.indexed, stats.skipped, stats.errors);
-    }
+    // Open existing workspace (fails if not indexed)
+    let workspace = match Workspace::open(workspace_path) {
+        Ok(ws) => ws,
+        Err(_) => {
+            eprintln!("Workspace not indexed: {}", workspace_path.display());
+            eprintln!();
+            eprintln!("To index this workspace, run:");
+            eprintln!("  ygrep index              # Text-only (fast)");
+            eprintln!("  ygrep index --semantic   # With semantic search (slower, better results)");
+            std::process::exit(1);
+        }
+    };
 
     // Search: use hybrid search by default if semantic index is available
     #[cfg(feature = "embeddings")]
@@ -36,8 +35,8 @@ pub fn run(
     let use_hybrid = false;
     let _ = text_only; // Suppress unused warning when embeddings disabled
 
-    let result = if use_hybrid {
-        // Hybrid search (BM25 + vector with RRF)
+    let result = if use_hybrid && !use_regex {
+        // Hybrid search (BM25 + vector with RRF) - not supported with regex
         #[cfg(feature = "embeddings")]
         {
             workspace.search_hybrid(query, Some(limit))
@@ -50,7 +49,7 @@ pub fn run(
         let ext_filter = if extensions.is_empty() { None } else { Some(extensions) };
         let path_filter = if paths.is_empty() { None } else { Some(paths) };
 
-        workspace.search_filtered(query, Some(limit), ext_filter, path_filter)
+        workspace.search_filtered(query, Some(limit), ext_filter, path_filter, use_regex)
             .context("Search failed")?
     };
 

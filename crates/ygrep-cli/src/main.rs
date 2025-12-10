@@ -7,8 +7,30 @@ mod output;
 
 #[derive(Parser)]
 #[command(name = "ygrep")]
-#[command(about = "AI-optimized semantic code search", long_about = None)]
+#[command(about = "Fast indexed code search with optional semantic search")]
+#[command(long_about = "ygrep - Fast indexed code search with optional semantic search\n\n\
+Uses literal text matching by default. Special characters work:\n\
+  $variable, ->get(, {% block, @decorator\n\n\
+Use --regex (-r) for regex patterns: ygrep search \"fn\\\\s+main\" -r\n\n\
+Output formats:\n\
+  (default)  AI-optimized: path:line (score%) with match indicators\n\
+  --json     Full JSON with metadata\n\
+  --pretty   Human-readable with line numbers and context\n\n\
+Match indicators in default output:\n\
+  +  hybrid match (text AND semantic)\n\
+  ~  semantic only (conceptual match)\n\
+  (none) text match only")]
 #[command(version)]
+#[command(after_help = "EXAMPLES:\n\
+    ygrep index                     Index current directory (text-only)\n\
+    ygrep index --semantic          Index with semantic search (slower)\n\
+    ygrep \"search query\"            Search with default AI output\n\
+    ygrep \"fn main\" -n 10           Limit to 10 results\n\
+    ygrep \"->get(\" -e php           Search PHP files only\n\
+    ygrep search \"fn\\\\s+main\" -r    Regex search\n\
+    ygrep search \"api\" --json       JSON output\n\
+    ygrep install claude-code       Install for Claude Code\n\n\
+For more info: https://github.com/yetidevworks/ygrep")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -25,9 +47,13 @@ pub struct Cli {
     #[arg(short = 'C', long, global = true)]
     pub workspace: Option<PathBuf>,
 
-    /// Output format: ai, json, pretty
-    #[arg(short, long, default_value = "ai", global = true)]
-    pub format: OutputFormat,
+    /// Output as JSON
+    #[arg(long, global = true, conflicts_with = "pretty")]
+    pub json: bool,
+
+    /// Output in human-readable format (more context)
+    #[arg(long, global = true, conflicts_with = "json")]
+    pub pretty: bool,
 
     /// Verbose output
     #[arg(short, long, global = true)]
@@ -36,9 +62,9 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Search the codebase (default command)
+    /// Search indexed codebase (literal matching by default, like grep)
     Search {
-        /// Search query
+        /// Search query (literal text or regex with --regex)
         query: String,
 
         /// Maximum results
@@ -53,6 +79,10 @@ pub enum Commands {
         #[arg(short = 'p', long = "path")]
         paths: Vec<String>,
 
+        /// Treat query as regex pattern instead of literal text
+        #[arg(short = 'r', long)]
+        regex: bool,
+
         /// Show relevance scores
         #[arg(long)]
         scores: bool,
@@ -62,83 +92,97 @@ pub enum Commands {
         text_only: bool,
     },
 
-    /// Index a workspace
+    /// Build search index for a workspace (run before searching)
     Index {
         /// Workspace path (default: current directory)
         path: Option<PathBuf>,
 
-        /// Force complete rebuild
+        /// Force complete rebuild (clears existing index)
         #[arg(long)]
         rebuild: bool,
 
-        /// Build semantic search index (slower, but better results)
+        /// Build semantic index for natural language queries (slower, ~25MB model)
         #[arg(long, conflicts_with = "text")]
         semantic: bool,
 
-        /// Build text-only index (fast, converts semantic index to text-only)
+        /// Build text-only index (fast, default). Converts semantic to text-only.
         #[arg(long, conflicts_with = "semantic")]
         text: bool,
     },
 
-    /// Show index status
+    /// Show index status for current workspace
     Status {
         /// Show detailed statistics
         #[arg(long)]
         detailed: bool,
     },
 
-    /// Watch for file changes and update index incrementally
+    /// Watch for file changes and update index automatically
     Watch {
         /// Workspace path (default: current directory)
         path: Option<PathBuf>,
     },
 
-    /// Install ygrep for a specific tool/client
+    /// Install ygrep integration for AI coding tools
     #[command(subcommand)]
     Install(InstallTarget),
 
-    /// Uninstall ygrep from a specific tool/client
+    /// Remove ygrep integration from AI coding tools
     #[command(subcommand)]
     Uninstall(InstallTarget),
 
-    /// Manage indexes
+    /// Manage stored indexes (list, clean, remove)
     #[command(subcommand)]
     Indexes(IndexesCommand),
 }
 
 #[derive(Subcommand, Clone)]
 pub enum IndexesCommand {
-    /// List all indexes
+    /// List all indexes with size and type (text/semantic)
     List,
-    /// Remove orphaned indexes (workspaces that no longer exist)
+    /// Remove orphaned indexes for workspaces that no longer exist
     Clean,
     /// Remove a specific index by hash or workspace path
     Remove {
-        /// Index hash or workspace path
+        /// Index hash (from `ygrep indexes list`) or workspace path
         identifier: String,
     },
 }
 
 #[derive(Subcommand, Clone)]
 pub enum InstallTarget {
-    /// Install/uninstall for Claude Code
+    /// Claude Code - Installs plugin with skill and auto-index hook
     ClaudeCode,
-    /// Install/uninstall for OpenCode
+    /// OpenCode - Installs tool definition
     Opencode,
-    /// Install/uninstall for Codex
+    /// Codex - Adds skill to ~/.codex/AGENTS.md
     Codex,
-    /// Install/uninstall for Factory Droid
+    /// Factory Droid - Installs hooks and skill
     Droid,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+/// Output format determined by --json or --pretty flags
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum OutputFormat {
     /// AI-optimized minimal output (default)
+    #[default]
     Ai,
     /// JSON output
     Json,
     /// Human-readable formatted output
     Pretty,
+}
+
+impl OutputFormat {
+    pub fn from_flags(json: bool, pretty: bool) -> Self {
+        if json {
+            OutputFormat::Json
+        } else if pretty {
+            OutputFormat::Pretty
+        } else {
+            OutputFormat::Ai
+        }
+    }
 }
 
 fn main() -> Result<()> {
@@ -161,10 +205,13 @@ fn main() -> Result<()> {
         std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
     });
 
+    // Determine output format from flags
+    let format = OutputFormat::from_flags(cli.json, cli.pretty);
+
     // Handle command
     match cli.command {
-        Some(Commands::Search { query, limit, extensions, paths, scores, text_only }) => {
-            commands::search::run(&workspace, &query, limit, extensions, paths, scores, text_only, cli.format)?;
+        Some(Commands::Search { query, limit, extensions, paths, regex, scores, text_only }) => {
+            commands::search::run(&workspace, &query, limit, extensions, paths, regex, scores, text_only, format)?;
         }
         Some(Commands::Index { path, rebuild, semantic, text }) => {
             let target = path.unwrap_or(workspace);
@@ -209,7 +256,7 @@ fn main() -> Result<()> {
                 println!();
             } else {
                 let query = cli.query.join(" ");
-                commands::search::run(&workspace, &query, cli.limit, vec![], vec![], false, false, cli.format)?;
+                commands::search::run(&workspace, &query, cli.limit, vec![], vec![], false, false, false, format)?;
             }
         }
     }

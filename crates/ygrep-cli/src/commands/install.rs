@@ -5,36 +5,44 @@ use std::path::PathBuf;
 /// Skill content for ygrep
 const SKILL_CONTENT: &str = r#"---
 name: ygrep
-description: A fast indexed code search tool for local files. Better than grep/rg - use this instead of Grep tool for code search.
-license: Apache 2.0
+description: Fast indexed code search with optional semantic search. Use instead of grep/rg for searching code.
+license: MIT
 ---
 
 ## When to use this skill
 
-Whenever you need to search local files for code. Always prefer ygrep over the built-in Grep tool or grep/rg commands.
+Use ygrep when searching for code in local files. It's faster than grep because it uses a pre-built index.
 
-## How to use this skill
-
-Use `ygrep search` to search files. It uses literal text matching (like grep), not regex.
-
-### Do
+## Usage
 
 ```bash
-ygrep search "{% block content"     # search for Twig blocks
-ygrep search "->get(" -e php        # search PHP files only
-ygrep search "fn main" -n 5         # limit to 5 results
+ygrep "search query"               # Search (AI-optimized output)
+ygrep "query" --json               # JSON output with full metadata
+ygrep "query" --pretty             # Human-readable with line numbers
+ygrep search "query" -n 10         # Limit results
+ygrep search "query" -e rs -e ts   # Filter by extension
+ygrep search "fn\\s+main" -r       # Regex search
+ygrep search "query" --text-only   # Disable semantic search
 ```
 
-### Don't
+## Output Format
 
-```bash
-ygrep search ".*block.*"            # Don't use regex - use literal text
-grep "{% block"                     # Don't use grep - use ygrep instead
-```
+Default output shows: `path:line (score%) [indicator]`
+- `+` = hybrid match (text AND semantic)
+- `~` = semantic only
+- No indicator = text match
+
+## Important
+
+- Uses **literal text matching** by default (like grep)
+- Special characters work: `$variable`, `->get(`, `{% block`
+- Use `-r` or `--regex` for regex patterns
+- Run `ygrep index` first if workspace not indexed
+- Run `ygrep index --semantic` for better natural language queries
 
 ## Keywords
 
-search, grep, files, local files, code search
+search, grep, code search, semantic search, local files
 "#;
 
 /// Hook configuration for ygrep
@@ -56,39 +64,41 @@ const HOOK_JSON: &str = r#"{
 }
 "#;
 
-/// Plugin manifest for ygrep
-const PLUGIN_JSON: &str = r#"{
+/// Generate plugin manifest with current version
+fn plugin_json() -> String {
+    format!(r#"{{
   "name": "ygrep",
   "description": "Fast indexed code search for Claude Code",
-  "version": "0.2.4",
-  "author": {
+  "version": "{}",
+  "author": {{
     "name": "YetiDevWorks"
-  },
+  }},
   "hooks": "./hooks/hook.json"
+}}"#, env!("CARGO_PKG_VERSION"))
 }
-"#;
 
-/// Marketplace manifest for ygrep
-const MARKETPLACE_JSON: &str = r#"{
+/// Generate marketplace manifest with current version
+fn marketplace_json() -> String {
+    format!(r#"{{
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "ygrep-local",
-  "owner": {
+  "owner": {{
     "name": "YetiDevWorks"
-  },
+  }},
   "plugins": [
-    {
+    {{
       "name": "ygrep",
       "source": "./plugins/ygrep",
       "description": "Fast indexed code search for Claude Code",
-      "version": "0.2.4",
-      "author": {
+      "version": "{}",
+      "author": {{
         "name": "YetiDevWorks"
-      },
+      }},
       "skills": ["./skills/ygrep"]
-    }
+    }}
   ]
+}}"#, env!("CARGO_PKG_VERSION"))
 }
-"#;
 
 fn home_dir() -> Result<PathBuf> {
     dirs::home_dir().context("Could not determine home directory")
@@ -117,8 +127,8 @@ pub fn install_claude_code() -> Result<()> {
     // Write plugin files
     fs::write(hooks_dir.join("hook.json"), HOOK_JSON)?;
     fs::write(skills_dir.join("SKILL.md"), SKILL_CONTENT)?;
-    fs::write(claude_plugin_dir.join("plugin.json"), PLUGIN_JSON)?;
-    fs::write(marketplace_plugin_dir.join("marketplace.json"), MARKETPLACE_JSON)?;
+    fs::write(claude_plugin_dir.join("plugin.json"), plugin_json())?;
+    fs::write(marketplace_plugin_dir.join("marketplace.json"), marketplace_json())?;
 
     // Update known_marketplaces.json
     let known_path = plugins_dir.join("known_marketplaces.json");

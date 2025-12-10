@@ -45,7 +45,8 @@ ygrep install droid          # Factory Droid
 ### 2. Index your project
 
 ```bash
-ygrep index
+ygrep index                    # Fast text-only index
+ygrep index --semantic         # With semantic search (better natural language queries)
 ```
 
 ### 3. Search
@@ -73,10 +74,10 @@ ygrep search "error" -n 20         # Limit results
 ygrep search "config" -e rs -e toml # Filter by extension
 ygrep search "api" -p src/         # Filter by path
 
-# Output formats
-ygrep search "query" -f ai         # AI-optimized (default)
-ygrep search "query" -f json       # JSON output
-ygrep search "query" -f pretty     # Human-readable
+# Output formats (AI format is default)
+ygrep search "query"               # AI-optimized (default)
+ygrep search "query" --json        # JSON output
+ygrep search "query" --pretty      # Human-readable
 ```
 
 ### Indexing
@@ -197,10 +198,50 @@ ygrep uninstall droid              # Uninstall
 
 ## Example Output
 
-AI-optimized output format:
+### AI Format (Default)
+
+Optimized for AI assistants - single line header with score and match type:
 
 ```
-# 5 results
+# 5 results (3 text + 2 semantic)
+
+src/config.rs:45 (85%) +
+  pub struct Config {
+
+src/main.rs:12 (72%) ~
+  fn main() -> Result<()> {
+
+src/lib.rs:100 (65%)
+  let workspace = Workspace::open(&config)?;
+```
+
+**Format:** `path:line (score%) [match_indicator]`
+- `+` = Hybrid match (both text AND semantic)
+- `~` = Semantic only (no exact text match)
+- No indicator = Text only
+
+### JSON Format
+
+Full metadata with `--json`:
+
+```json
+{
+  "hits": [...],
+  "total": 5,
+  "query_time_ms": 42,
+  "text_hits": 3,
+  "semantic_hits": 2
+}
+```
+
+Each hit includes `match_type`: `"Text"`, `"Semantic"`, or `"Hybrid"`.
+
+### Pretty Format
+
+Human-readable with `--pretty`:
+
+```
+# 5 results (3 text + 2 semantic)
 
 src/config.rs:45-67
   45: pub struct Config {
