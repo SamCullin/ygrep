@@ -89,12 +89,12 @@ impl EmbeddingModel {
             return Ok(Arc::clone(model));
         }
 
-        eprint!("Loading embedding model...");
+        eprint!("  Loading semantic model...");
 
         let model = TextEmbedding::try_new(
             InitOptions::new(self.model_type.to_fastembed())
                 .with_show_download_progress(true)
-        ).map_err(|e| YgrepError::Config(format!("Failed to load embedding model: {}", e)))?;
+        ).map_err(|e| YgrepError::Config(format!("Failed to load semantic model: {}", e)))?;
 
         let model = Arc::new(model);
         *guard = Some(Arc::clone(&model));
@@ -119,7 +119,6 @@ impl EmbeddingModel {
         if texts.is_empty() {
             return Ok(vec![]);
         }
-
         let model = self.ensure_loaded()?;
         model.embed(texts.to_vec(), None)
             .map_err(|e| YgrepError::Config(format!("Batch embedding failed: {}", e)))
@@ -128,6 +127,12 @@ impl EmbeddingModel {
     /// Check if the model is loaded
     pub fn is_loaded(&self) -> bool {
         self.model.read().is_some()
+    }
+
+    /// Pre-load the model (call before starting progress bar)
+    pub fn preload(&self) -> Result<()> {
+        self.ensure_loaded()?;
+        Ok(())
     }
 }
 

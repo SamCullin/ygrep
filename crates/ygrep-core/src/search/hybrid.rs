@@ -65,6 +65,7 @@ impl HybridSearcher {
             vector_results,
             self.config.bm25_weight,
             self.config.vector_weight,
+            query,
         );
 
         // Take top results
@@ -192,6 +193,7 @@ impl HybridSearcher {
         vector_results: Vec<RankedResult>,
         bm25_weight: f32,
         vector_weight: f32,
+        query: &str,
     ) -> Vec<SearchHit> {
         const K: f32 = 60.0; // RRF constant
 
@@ -228,7 +230,7 @@ impl HybridSearcher {
             .into_values()
             .map(|fused| {
                 let total_score = fused.bm25_rrf + fused.vector_rrf;
-                let (snippet, match_offset, line_count) = create_relevant_snippet(&fused.result.content, 10);
+                let (snippet, match_offset, line_count) = create_relevant_snippet(&fused.result.content, query, 10);
 
                 // Adjust line numbers to reflect the snippet position
                 let actual_line_start = fused.result.line_start + match_offset as u64;
@@ -303,10 +305,38 @@ fn extract_u64(doc: &tantivy::TantivyDocument, field: tantivy::schema::Field) ->
     })
 }
 
-/// Create a snippet showing relevant lines
-/// Returns (snippet, line_offset, line_count)
-fn create_relevant_snippet(content: &str, max_lines: usize) -> (String, usize, usize) {
-    let lines: Vec<&str> = content.lines().take(max_lines).collect();
-    let line_count = lines.len();
-    (lines.join("\n"), 0, line_count)
+/// Create a snippet showing lines relevant to the query
+/// Returns (snippet, line_offset_from_start, line_count)
+fn create_relevant_snippet(content: &str, query: &str, max_lines: usize) -> (String, usize, usize) {
+    let lines: Vec<&str> = content.lines().collect();
+    let query_lower = query.to_lowercase();
+    let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
+
+    // Find lines that contain any query term
+    let mut matching_indices: Vec<usize> = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        let line_lower = line.to_lowercase();
+        if query_terms.iter().any(|term| line_lower.contains(term)) {
+            matching_indices.push(i);
+        }
+    }
+
+    if matching_indices.is_empty() {
+        // No direct matches, return first lines
+        let snippet = lines.iter().take(max_lines).copied().collect::<Vec<_>>().join("\n");
+        let line_count = snippet.lines().count();
+        return (snippet, 0, line_count);
+    }
+
+    // Get context around the first match
+    let first_match = matching_indices[0];
+    let context_before = 2;
+    let context_after = max_lines.saturating_sub(context_before + 1);
+
+    let start = first_match.saturating_sub(context_before);
+    let end = (first_match + context_after + 1).min(lines.len());
+
+    let snippet = lines[start..end].join("\n");
+    let line_count = end - start;
+    (snippet, start, line_count)
 }

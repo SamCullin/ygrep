@@ -8,7 +8,7 @@ A fast, local, indexed code search tool optimized for AI coding assistants. Writ
 - **Code-aware tokenizer** - Preserves `$`, `@`, `#` as part of tokens (essential for PHP, Shell, Python, etc.)
 - **Fast indexed search** - Tantivy-powered BM25 ranking, instant results
 - **File watching** - Incremental index updates on file changes
-- **Optional semantic search** - HNSW vector index with local embeddings (all-MiniLM-L6-v2)
+- **Optional semantic search** - HNSW vector index with local semantic model (all-MiniLM-L6-v2)
 - **Symlink handling** - Follows symlinks with cycle detection
 - **AI-optimized output** - Clean, minimal output with file paths and line numbers
 
@@ -84,7 +84,7 @@ ygrep search "query" -f pretty     # Human-readable
 ```bash
 ygrep index                        # Index current directory
 ygrep index --rebuild              # Force rebuild (required after ygrep updates)
-ygrep index --embeddings           # Include semantic embeddings (slower)
+ygrep index --semantic             # Build semantic index (slower)
 ygrep index /path/to/project       # Index specific directory
 ```
 
@@ -113,14 +113,14 @@ ygrep indexes remove /path/to/dir  # Remove index by workspace path
 
 ### Semantic Search (Optional)
 
-Enable semantic/vector search for better results on natural language queries:
+Enable semantic search for better results on natural language queries:
 
 ```bash
-# Index with embeddings (one-time, slower)
-ygrep index --embeddings
+# Build semantic index (one-time, slower)
+ygrep index --semantic
 
-# Search automatically uses hybrid mode when embeddings exist
-ygrep "authentication flow"        # Uses BM25 + vector search
+# Search automatically uses hybrid mode when semantic index exists
+ygrep "authentication flow"        # Uses BM25 + semantic search
 
 # Force text-only search
 ygrep search "auth" --text-only
@@ -133,7 +133,7 @@ Semantic search uses the `all-MiniLM-L6-v2` model (~25MB, downloaded on first us
 - ✅ Linux x86_64
 - ❌ Linux ARM64/ARMv7/musl (text search only)
 
-On unsupported platforms, ygrep works normally with BM25 text search - the `--embeddings` flag will print a warning.
+On unsupported platforms, ygrep works normally with BM25 text search - the `--semantic` flag will print a warning.
 
 ## AI Tool Integration
 
@@ -194,7 +194,7 @@ src/main.rs:12-28
 
 1. **Indexing**: Walks directory tree, indexes text files with Tantivy using a code-aware tokenizer
 2. **Tokenizer**: Custom tokenizer preserves code characters (`$`, `@`, `#`, `-`, `_`) as part of tokens
-3. **Search**: BM25-ranked search with optional semantic/vector search
+3. **Search**: BM25-ranked search with optional semantic search
 4. **Results**: Returns matching files with line numbers and context
 
 ## Configuration

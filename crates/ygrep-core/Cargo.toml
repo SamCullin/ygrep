@@ -41,3 +41,4 @@ xxhash-rust = { workspace = true }
 dirs = { workspace = true }
 walkdir = { workspace = true }
 chrono = { workspace = true }
+indicatif = { workspace = true }

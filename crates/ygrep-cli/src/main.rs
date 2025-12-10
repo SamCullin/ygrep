@@ -17,6 +17,10 @@ pub struct Cli {
     #[arg(trailing_var_arg = true, num_args = 0..)]
     pub query: Vec<String>,
 
+    /// Maximum results (for shorthand search)
+    #[arg(short = 'n', long, default_value = "100")]
+    pub limit: usize,
+
     /// Workspace root (default: current directory)
     #[arg(short = 'C', long, global = true)]
     pub workspace: Option<PathBuf>,
@@ -53,7 +57,7 @@ pub enum Commands {
         #[arg(long)]
         scores: bool,
 
-        /// Text-only search (disable semantic/vector search)
+        /// Text-only search (disable semantic search)
         #[arg(long)]
         text_only: bool,
     },
@@ -67,12 +71,12 @@ pub enum Commands {
         #[arg(long)]
         rebuild: bool,
 
-        /// Generate embeddings for semantic search (slower, but better results)
+        /// Build semantic search index (slower, but better results)
         #[arg(long)]
-        embeddings: bool,
+        semantic: bool,
     },
 
-    /// Show index and daemon status
+    /// Show index status
     Status {
         /// Show detailed statistics
         #[arg(long)]
@@ -158,9 +162,9 @@ fn main() -> Result<()> {
         Some(Commands::Search { query, limit, extensions, paths, scores, text_only }) => {
             commands::search::run(&workspace, &query, limit, extensions, paths, scores, text_only, cli.format)?;
         }
-        Some(Commands::Index { path, rebuild, embeddings }) => {
+        Some(Commands::Index { path, rebuild, semantic }) => {
             let target = path.unwrap_or(workspace);
-            commands::index::run(&target, rebuild, embeddings)?;
+            commands::index::run(&target, rebuild, semantic)?;
         }
         Some(Commands::Status { detailed }) => {
             commands::status::run(&workspace, detailed)?;
@@ -201,7 +205,7 @@ fn main() -> Result<()> {
                 println!();
             } else {
                 let query = cli.query.join(" ");
-                commands::search::run(&workspace, &query, 100, vec![], vec![], false, false, cli.format)?;
+                commands::search::run(&workspace, &query, cli.limit, vec![], vec![], false, false, cli.format)?;
             }
         }
     }

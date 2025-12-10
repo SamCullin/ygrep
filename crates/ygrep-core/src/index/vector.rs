@@ -3,18 +3,29 @@
 use std::path::{Path, PathBuf};
 use parking_lot::RwLock;
 use hnsw_rs::prelude::*;
+use hnsw_rs::hnswio::HnswIo;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, YgrepError};
 
-/// Stored vector with its document ID
+/// HNSW dump file basename
+const HNSW_BASENAME: &str = "hnsw";
+
+/// Compact doc_id index (fast to load)
+#[derive(Debug, Serialize, Deserialize)]
+struct DocIdIndex {
+    dimension: usize,
+    doc_ids: Vec<String>,
+}
+
+/// Stored vector with its document ID (legacy format)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct StoredVector {
     doc_id: String,
     vector: Vec<f32>,
 }
 
-/// Persistent data for vector index
+/// Persistent data for vector index (legacy format - slow to load)
 #[derive(Debug, Serialize, Deserialize)]
 struct VectorData {
     dimension: usize,
@@ -26,8 +37,8 @@ pub struct VectorIndex {
     path: PathBuf,
     hnsw: RwLock<Hnsw<'static, f32, DistCosine>>,
     dimension: usize,
-    /// Stored vectors (for persistence)
-    vectors: RwLock<Vec<StoredVector>>,
+    /// Document IDs (index matches HNSW point ID)
+    doc_ids: RwLock<Vec<String>>,
 }
 
 impl VectorIndex {
@@ -52,27 +63,50 @@ impl VectorIndex {
             path,
             hnsw: RwLock::new(hnsw),
             dimension,
-            vectors: RwLock::new(Vec::new()),
+            doc_ids: RwLock::new(Vec::new()),
         })
     }
 
     /// Load an existing vector index
     pub fn load(path: PathBuf) -> Result<Self> {
-        let data_path = path.join("vectors.json");
+        // Try fast path: load from doc_ids.json + HNSW dump
+        let doc_ids_path = path.join("doc_ids.json");
+        let hnsw_graph = path.join(format!("{}.hnsw.graph", HNSW_BASENAME));
 
-        if !data_path.exists() {
-            return Err(YgrepError::WorkspaceNotIndexed(path));
+        if doc_ids_path.exists() && hnsw_graph.exists() {
+            // Fast path: load compact doc_id index + HNSW dump
+            let doc_index: DocIdIndex = serde_json::from_reader(
+                std::fs::File::open(&doc_ids_path)?
+            ).map_err(|e| YgrepError::Config(format!("Failed to load doc_id index: {}", e)))?;
+
+            let reloader = Box::leak(Box::new(HnswIo::new(&path, HNSW_BASENAME)));
+            let hnsw = reloader.load_hnsw::<f32, DistCosine>()
+                .map_err(|e| YgrepError::Config(format!("Failed to load HNSW index: {}", e)))?;
+
+            return Ok(Self {
+                path,
+                hnsw: RwLock::new(hnsw),
+                dimension: doc_index.dimension,
+                doc_ids: RwLock::new(doc_index.doc_ids),
+            });
         }
 
-        // Load vector data
+        // Fallback: load from legacy vectors.json
+        let data_path = path.join("vectors.json");
+        if !data_path.exists() {
+            return Err(YgrepError::WorkspaceNotIndexed(path.clone()));
+        }
+
+        // Load legacy vector data (slow but backwards compatible)
         let data: VectorData = serde_json::from_reader(
             std::fs::File::open(&data_path)?
         ).map_err(|e| YgrepError::Config(format!("Failed to load vector data: {}", e)))?;
 
-        // Create HNSW index
-        let hnsw = Hnsw::new(16, data.vectors.len().max(10_000), 16, 200, DistCosine {});
+        // Extract doc_ids from vectors
+        let doc_ids: Vec<String> = data.vectors.iter().map(|sv| sv.doc_id.clone()).collect();
 
-        // Rebuild index from stored vectors
+        // Rebuild HNSW from vectors
+        let hnsw = Hnsw::new(16, data.vectors.len().max(10_000), 16, 200, DistCosine {});
         for (id, sv) in data.vectors.iter().enumerate() {
             hnsw.insert((&sv.vector, id));
         }
@@ -81,7 +115,7 @@ impl VectorIndex {
             path,
             hnsw: RwLock::new(hnsw),
             dimension: data.dimension,
-            vectors: RwLock::new(data.vectors),
+            doc_ids: RwLock::new(doc_ids),
         })
     }
 
@@ -99,14 +133,11 @@ impl VectorIndex {
             )));
         }
 
-        let mut vectors = self.vectors.write();
-        let id = vectors.len();
+        let mut doc_ids = self.doc_ids.write();
+        let id = doc_ids.len();
 
-        // Store the vector
-        vectors.push(StoredVector {
-            doc_id: doc_id.to_string(),
-            vector: embedding.to_vec(),
-        });
+        // Store the doc_id
+        doc_ids.push(doc_id.to_string());
 
         // Insert into HNSW
         let hnsw = self.hnsw.write();
@@ -127,9 +158,9 @@ impl VectorIndex {
         }
 
         let hnsw = self.hnsw.read();
-        let vectors = self.vectors.read();
+        let doc_ids = self.doc_ids.read();
 
-        if vectors.is_empty() {
+        if doc_ids.is_empty() {
             return Ok(vec![]);
         }
 
@@ -140,8 +171,8 @@ impl VectorIndex {
         Ok(neighbors
             .into_iter()
             .filter_map(|n| {
-                vectors.get(n.d_id).map(|sv| {
-                    (n.d_id as u64, n.distance, sv.doc_id.clone())
+                doc_ids.get(n.d_id).map(|doc_id| {
+                    (n.d_id as u64, n.distance, doc_id.clone())
                 })
             })
             .collect())
@@ -149,25 +180,29 @@ impl VectorIndex {
 
     /// Save the index to disk
     pub fn save(&self) -> Result<()> {
-        let data_path = self.path.join("vectors.json");
-
-        let vectors = self.vectors.read();
-        let data = VectorData {
+        // Save compact doc_id index (fast to load)
+        let doc_ids_path = self.path.join("doc_ids.json");
+        let doc_ids = self.doc_ids.read();
+        let doc_index = DocIdIndex {
             dimension: self.dimension,
-            vectors: vectors.clone(),
+            doc_ids: doc_ids.clone(),
         };
-
         serde_json::to_writer(
-            std::fs::File::create(&data_path)?,
-            &data,
-        ).map_err(|e| YgrepError::Config(format!("Failed to save vector data: {}", e)))?;
+            std::fs::File::create(&doc_ids_path)?,
+            &doc_index,
+        ).map_err(|e| YgrepError::Config(format!("Failed to save doc_id index: {}", e)))?;
+
+        // Save HNSW graph for fast loading
+        let hnsw = self.hnsw.read();
+        hnsw.file_dump(&self.path, HNSW_BASENAME)
+            .map_err(|e| YgrepError::Config(format!("Failed to save HNSW index: {}", e)))?;
 
         Ok(())
     }
 
     /// Get the number of vectors in the index
     pub fn len(&self) -> usize {
-        self.vectors.read().len()
+        self.doc_ids.read().len()
     }
 
     /// Check if the index is empty
@@ -184,7 +219,7 @@ impl VectorIndex {
     pub fn clear(&self) {
         let mut hnsw = self.hnsw.write();
         *hnsw = Hnsw::new(16, 10_000, 16, 200, DistCosine {});
-        self.vectors.write().clear();
+        self.doc_ids.write().clear();
     }
 }
 

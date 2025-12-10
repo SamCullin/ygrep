@@ -70,7 +70,8 @@ impl SearchResult {
                 let line_num = hit.line_start + i as u64;
                 let trimmed = line.trim();
                 let preview = if trimmed.len() > 80 {
-                    format!("{}...", &trimmed[..80])
+                    let boundary = trimmed.floor_char_boundary(80);
+                    format!("{}...", &trimmed[..boundary])
                 } else {
                     trimmed.to_string()
                 };

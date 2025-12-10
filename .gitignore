@@ -20,3 +20,4 @@ Thumbs.db
 
 # Local plan file
 .claude-plan.md
+/benchmark

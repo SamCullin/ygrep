@@ -23,7 +23,7 @@ pub fn run(workspace_path: &Path, rebuild: bool, with_embeddings: bool) -> Resul
     }
 
     if with_embeddings {
-        eprintln!("(with semantic embeddings - this may take a while)");
+        eprintln!("(building semantic index - this may take a while)");
     }
 
     // Open workspace (creates fresh index if rebuilt)
@@ -41,7 +41,7 @@ pub fn run(workspace_path: &Path, rebuild: bool, with_embeddings: bool) -> Resul
     eprintln!("Indexing complete in {:.2}s", elapsed.as_secs_f64());
     eprintln!("  Files indexed: {}", stats.indexed);
     if stats.embedded > 0 {
-        eprintln!("  Files embedded: {}", stats.embedded);
+        eprintln!("  Semantic indexed: {}", stats.embedded);
     }
     eprintln!("  Files skipped: {}", stats.skipped);
     eprintln!("  Errors: {}", stats.errors);

@@ -197,12 +197,22 @@ impl Workspace {
                 .collect();
 
             if filtered_batch.is_empty() {
-                eprintln!("No documents suitable for embedding.");
+                eprintln!("No documents suitable for semantic indexing.");
             } else {
-                eprintln!("Generating embeddings for {} documents (filtered from {})...",
-                    filtered_batch.len(), indexed);
+                use indicatif::{ProgressBar, ProgressStyle};
 
-                let total_docs = filtered_batch.len();
+                let total_docs = filtered_batch.len() as u64;
+                eprintln!("Building semantic index for {} documents...", total_docs);
+
+                // Pre-load the semantic model before starting progress bar
+                self.embedding_model.preload()?;
+
+                let pb = ProgressBar::new(total_docs);
+                pb.set_style(ProgressStyle::default_bar()
+                    .template("  [{bar:40.cyan/blue}] {pos}/{len} ({percent}%)")
+                    .unwrap()
+                    .progress_chars("━╸─"));
+                pb.enable_steady_tick(std::time::Duration::from_millis(100));
 
                 for chunk in filtered_batch.chunks(BATCH_SIZE) {
                     // Truncate to ~4KB for embedding - sufficient context for code, faster tokenization
@@ -227,22 +237,24 @@ impl Workspace {
                                 }
                             }
                             total_embedded += chunk.len();
-                            eprint!("\r  Embedded {}/{} documents...    ", total_embedded, total_docs);
+                            pb.set_position(total_embedded as u64);
                         }
                         Err(e) => {
                             tracing::warn!("Batch embedding failed: {}", e);
+                            pb.inc(chunk.len() as u64);
                         }
                     }
                 }
 
-                eprintln!("\r  Embedded {} documents.              ", total_embedded);
+                pb.finish_and_clear();
+                eprintln!("  Indexed {} documents.", total_embedded);
                 self.vector_index.save()?;
             }
         }
 
         #[cfg(not(feature = "embeddings"))]
         if with_embeddings {
-            eprintln!("Warning: Embeddings feature not available in this build.");
+            eprintln!("Warning: Semantic search feature not available in this build.");
         }
 
         let stats = walker.stats();
