@@ -8,6 +8,9 @@ pub fn run(workspace_path: &Path) -> Result<()> {
     let workspace = Workspace::open(workspace_path)
         .context("Failed to open workspace")?;
 
+    // Read the stored semantic flag
+    let use_semantic = workspace.stored_semantic_flag().unwrap_or(false);
+
     // Ensure workspace is indexed first
     if !workspace.is_indexed() {
         eprintln!("Workspace not indexed. Running initial index...");
@@ -16,7 +19,8 @@ pub fn run(workspace_path: &Path) -> Result<()> {
         eprintln!("Indexed {} files.", stats.indexed);
     }
 
-    eprintln!("Starting file watcher...");
+    let mode = if use_semantic { "semantic" } else { "text" };
+    eprintln!("Starting file watcher (mode: {})...", mode);
     eprintln!("Press Ctrl+C to stop.\n");
 
     let mut watcher = workspace.create_watcher()
@@ -39,7 +43,7 @@ pub fn run(workspace_path: &Path) -> Result<()> {
                 Some(WatchEvent::Changed(path)) => {
                     // Check if it's a text file we should index
                     if is_indexable(&path) {
-                        match workspace.index_file(&path) {
+                        match workspace.index_file_with_options(&path, use_semantic) {
                             Ok(()) => {
                                 changed_count += 1;
                                 eprintln!("  [+] {}", path.display());

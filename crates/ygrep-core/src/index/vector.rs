@@ -121,7 +121,11 @@ impl VectorIndex {
 
     /// Check if a vector index exists at the path
     pub fn exists(path: &Path) -> bool {
-        path.join("vectors.json").exists()
+        // Check for new format (doc_ids.json + HNSW dump) or legacy format (vectors.json)
+        let new_format = path.join("doc_ids.json").exists()
+            && path.join(format!("{}.hnsw.graph", HNSW_BASENAME)).exists();
+        let legacy_format = path.join("vectors.json").exists();
+        new_format || legacy_format
     }
 
     /// Insert an embedding and return its ID

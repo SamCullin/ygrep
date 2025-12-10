@@ -72,8 +72,12 @@ pub enum Commands {
         rebuild: bool,
 
         /// Build semantic search index (slower, but better results)
-        #[arg(long)]
+        #[arg(long, conflicts_with = "text")]
         semantic: bool,
+
+        /// Build text-only index (fast, converts semantic index to text-only)
+        #[arg(long, conflicts_with = "semantic")]
+        text: bool,
     },
 
     /// Show index status
@@ -162,9 +166,9 @@ fn main() -> Result<()> {
         Some(Commands::Search { query, limit, extensions, paths, scores, text_only }) => {
             commands::search::run(&workspace, &query, limit, extensions, paths, scores, text_only, cli.format)?;
         }
-        Some(Commands::Index { path, rebuild, semantic }) => {
+        Some(Commands::Index { path, rebuild, semantic, text }) => {
             let target = path.unwrap_or(workspace);
-            commands::index::run(&target, rebuild, semantic)?;
+            commands::index::run(&target, rebuild, semantic, text)?;
         }
         Some(Commands::Status { detailed }) => {
             commands::status::run(&workspace, detailed)?;

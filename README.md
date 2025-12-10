@@ -82,18 +82,23 @@ ygrep search "query" -f pretty     # Human-readable
 ### Indexing
 
 ```bash
-ygrep index                        # Index current directory
+ygrep index                        # Index current directory (honors stored mode)
 ygrep index --rebuild              # Force rebuild (required after ygrep updates)
-ygrep index --semantic             # Build semantic index (slower)
+ygrep index --semantic             # Build semantic index (sticky - remembered)
+ygrep index --text                 # Build text-only index (sticky - remembered)
 ygrep index /path/to/project       # Index specific directory
 ```
+
+The `--semantic` and `--text` flags are **sticky** - once set, subsequent `ygrep index` commands (without flags) will remember and use the same mode. This also applies to `ygrep watch`.
 
 ### File Watching
 
 ```bash
-ygrep watch                        # Watch current directory
+ygrep watch                        # Watch current directory (honors stored mode)
 ygrep watch /path/to/project       # Watch specific directory
 ```
+
+File watching automatically uses the same mode (text or semantic) as the original index.
 
 ### Status
 
@@ -105,10 +110,21 @@ ygrep status --detailed            # Detailed statistics
 ### Index Management
 
 ```bash
-ygrep indexes list                 # List all indexes with sizes
+ygrep indexes list                 # List all indexes with sizes and type
 ygrep indexes clean                # Remove orphaned indexes (freed disk space)
 ygrep indexes remove <hash>        # Remove specific index by hash
 ygrep indexes remove /path/to/dir  # Remove index by workspace path
+```
+
+Example output:
+```
+# 2 indexes (24.0 MB)
+
+1bb65a32a7aa44ba  319.4 KB  [text]
+  /path/to/project
+
+c4f2ba4712ed98e7  23.7 MB  [semantic]
+  /path/to/another-project
 ```
 
 ### Semantic Search (Optional)
@@ -116,14 +132,21 @@ ygrep indexes remove /path/to/dir  # Remove index by workspace path
 Enable semantic search for better results on natural language queries:
 
 ```bash
-# Build semantic index (one-time, slower)
+# Build semantic index (one-time, slower - mode is remembered)
 ygrep index --semantic
 
 # Search automatically uses hybrid mode when semantic index exists
 ygrep "authentication flow"        # Uses BM25 + semantic search
 
-# Force text-only search
+# Force text-only search (single query, doesn't change index mode)
 ygrep search "auth" --text-only
+
+# Future index/watch commands remember the mode
+ygrep index                        # Still semantic
+ygrep watch                        # Watches with semantic indexing
+
+# Convert back to text-only index
+ygrep index --text
 ```
 
 Semantic search uses the `all-MiniLM-L6-v2` model (~25MB, downloaded on first use).

@@ -264,6 +264,7 @@ impl Workspace {
             "workspace": self.root.to_string_lossy(),
             "indexed_at": chrono::Utc::now().to_rfc3339(),
             "files_indexed": indexed,
+            "semantic": with_embeddings,
         });
         let metadata_path = self.index_path.join("workspace.json");
         if let Err(e) = std::fs::write(&metadata_path, serde_json::to_string_pretty(&metadata).unwrap_or_default()) {
@@ -395,6 +396,80 @@ impl Workspace {
     /// Get the indexer config
     pub fn indexer_config(&self) -> &config::IndexerConfig {
         &self.config.indexer
+    }
+
+    /// Read the stored semantic flag from workspace.json metadata
+    /// Returns None if no metadata exists or flag is not set
+    pub fn stored_semantic_flag(&self) -> Option<bool> {
+        let metadata_path = self.index_path.join("workspace.json");
+        if metadata_path.exists() {
+            std::fs::read_to_string(&metadata_path)
+                .ok()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                .and_then(|v| v.get("semantic").and_then(|s| s.as_bool()))
+        } else {
+            None
+        }
+    }
+
+    /// Index or re-index a single file with optional semantic indexing (for incremental updates)
+    #[allow(unused_variables)]
+    pub fn index_file_with_options(&self, path: &Path, with_embeddings: bool) -> Result<()> {
+        // Create indexer and index the file
+        let indexer = index::Indexer::new(
+            self.config.indexer.clone(),
+            self.index.clone(),
+            &self.root,
+        )?;
+
+        match indexer.index_file(path) {
+            Ok(doc_id) => {
+                indexer.commit()?;
+                tracing::debug!("Indexed: {}", path.display());
+
+                // Generate embedding if semantic indexing is enabled
+                #[cfg(feature = "embeddings")]
+                if with_embeddings {
+                    if let Ok(content) = std::fs::read_to_string(path) {
+                        // Only embed files within size bounds
+                        let len = content.len();
+                        if len >= 50 && len <= 50_000 {
+                            // Truncate for embedding
+                            const EMBED_TRUNCATE: usize = 4096;
+                            let text = if content.len() > EMBED_TRUNCATE {
+                                let boundary = content.floor_char_boundary(EMBED_TRUNCATE);
+                                &content[..boundary]
+                            } else {
+                                content.as_str()
+                            };
+
+                            match self.embedding_model.embed(text) {
+                                Ok(embedding) => {
+                                    if let Err(e) = self.vector_index.insert(&doc_id, &embedding) {
+                                        tracing::debug!("Failed to insert embedding for {}: {}", doc_id, e);
+                                    } else {
+                                        // Save vector index after each file (incremental)
+                                        if let Err(e) = self.vector_index.save() {
+                                            tracing::debug!("Failed to save vector index: {}", e);
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::debug!("Failed to generate embedding for {}: {}", doc_id, e);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Ok(())
+            }
+            Err(YgrepError::FileTooLarge { .. }) => {
+                tracing::debug!("Skipped (too large): {}", path.display());
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
     }
 }
 

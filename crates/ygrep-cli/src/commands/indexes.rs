@@ -18,19 +18,26 @@ struct IndexInfo {
     path: PathBuf,
     workspace: Option<String>,
     size_bytes: u64,
+    semantic: Option<bool>,
 }
 
 /// Read index info from a directory
 fn read_index_info(hash: &str, index_path: &PathBuf) -> Result<IndexInfo> {
-    // Try to read workspace path from workspace.json (our metadata file)
+    // Try to read workspace path and semantic flag from workspace.json (our metadata file)
     let workspace_meta_path = index_path.join("workspace.json");
-    let workspace = if workspace_meta_path.exists() {
-        fs::read_to_string(&workspace_meta_path)
+    let (workspace, semantic) = if workspace_meta_path.exists() {
+        let json = fs::read_to_string(&workspace_meta_path)
             .ok()
-            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-            .and_then(|v| v.get("workspace").and_then(|w| w.as_str()).map(String::from))
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
+
+        let workspace = json.as_ref()
+            .and_then(|v| v.get("workspace").and_then(|w| w.as_str()).map(String::from));
+        let semantic = json.as_ref()
+            .and_then(|v| v.get("semantic").and_then(|s| s.as_bool()));
+
+        (workspace, semantic)
     } else {
-        None
+        (None, None)
     };
 
     // Calculate total size
@@ -41,6 +48,7 @@ fn read_index_info(hash: &str, index_path: &PathBuf) -> Result<IndexInfo> {
         path: index_path.clone(),
         workspace,
         size_bytes,
+        semantic,
     })
 }
 
@@ -112,7 +120,12 @@ pub fn list() -> Result<()> {
 
     for info in &indexes {
         let workspace = info.workspace.as_deref().unwrap_or("(unknown)");
-        println!("{}  {}", info.hash, format_size(info.size_bytes));
+        let index_type = match info.semantic {
+            Some(true) => "semantic",
+            Some(false) => "text",
+            None => "text", // Default for older indexes without the flag
+        };
+        println!("{}  {}  [{}]", info.hash, format_size(info.size_bytes), index_type);
         println!("  {}\n", workspace);
     }
 
