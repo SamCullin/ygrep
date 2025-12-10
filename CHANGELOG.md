@@ -5,6 +5,24 @@ All notable changes to ygrep will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2025-12-10
+
+### Added
+- Regex search support with `-r` / `--regex` flag
+- Match type indicators in output: `+` (hybrid), `~` (semantic only), none (text only)
+- Sticky index mode - `--semantic` and `--text` flags are remembered for future `index` and `watch` commands
+- Helpful error messages when searching unindexed workspaces (shows how to index)
+
+### Changed
+- Replaced `--format ai|json|pretty` with simpler `--json` and `--pretty` flags
+- Improved CLI help with detailed descriptions and usage examples
+- Updated AI tool integration skills with new output format documentation
+
+### Fixed
+- Fixed stray "unknown" indexes being created when opening unindexed workspaces
+- Fixed workspace detection to properly distinguish indexed vs unindexed workspaces
+- Prevented `Workspace::open()` from creating empty index directories
+
 ## [0.3.0] - 2025-12-09
 
 ### Changed
@@ -74,7 +92,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed file watcher to follow symlinks correctly
 - Deduplicated watch events for same file
 
-[0.2.6]: https://github.com/yetidevworks/ygrep/compare/v0.2.5...v0.3.0
+[1.0.0]: https://github.com/yetidevworks/ygrep/compare/v0.3.0...v1.0.0
+[0.3.0]: https://github.com/yetidevworks/ygrep/compare/v0.2.5...v0.3.0
 [0.2.5]: https://github.com/yetidevworks/ygrep/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/yetidevworks/ygrep/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/yetidevworks/ygrep/compare/v0.2.2...v0.2.3
