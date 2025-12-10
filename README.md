@@ -4,7 +4,8 @@ A fast, local, indexed code search tool optimized for AI coding assistants. Writ
 
 ## Features
 
-- **Literal text matching** - Works like grep, special characters included (`$variable`, `{% block`, `->get(`, `@decorator`)
+- **Literal text matching** - Works like grep by default, special characters included (`$variable`, `{% block`, `->get(`, `@decorator`)
+- **Regex support** - Use `-r` flag for regex patterns (`fn\s+main`, `TODO|FIXME`)
 - **Code-aware tokenizer** - Preserves `$`, `@`, `#` as part of tokens (essential for PHP, Shell, Python, etc.)
 - **Fast indexed search** - Tantivy-powered BM25 ranking, instant results
 - **File watching** - Incremental index updates on file changes
@@ -63,11 +64,16 @@ That's it! The AI tool will now use ygrep for code searches.
 ### Searching
 
 ```bash
-# Basic search (returns up to 100 results by default)
+# Basic search (literal text matching by default)
 ygrep "$variable"                  # PHP/Shell variables
 ygrep "{% block content"           # Twig templates
 ygrep "->get("                     # Method calls
 ygrep "@decorator"                 # Python decorators
+
+# Regex search (use -r or --regex)
+ygrep search "fn\s+\w+" -r         # Function definitions
+ygrep search "TODO|FIXME" -r       # Multiple patterns
+ygrep search "^import" -r          # Line anchors
 
 # With options
 ygrep search "error" -n 20         # Limit results
@@ -258,7 +264,7 @@ src/main.rs:12-28
 
 1. **Indexing**: Walks directory tree, indexes text files with Tantivy using a code-aware tokenizer
 2. **Tokenizer**: Custom tokenizer preserves code characters (`$`, `@`, `#`, `-`, `_`) as part of tokens
-3. **Search**: BM25-ranked search with optional semantic search
+3. **Search**: BM25-ranked literal search (default) or regex matching with `-r` flag, plus optional semantic search
 4. **Results**: Returns matching files with line numbers and context
 
 ## Configuration

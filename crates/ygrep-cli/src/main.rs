@@ -11,7 +11,7 @@ mod output;
 #[command(long_about = "ygrep - Fast indexed code search with optional semantic search\n\n\
 Uses literal text matching by default. Special characters work:\n\
   $variable, ->get(, {% block, @decorator\n\n\
-Use --regex (-r) for regex patterns: ygrep search \"fn\\\\s+main\" -r\n\n\
+Use -r/--regex for regex patterns: ygrep \"fn\\\\s+main\" -r\n\n\
 Output formats:\n\
   (default)  AI-optimized: path:line (score%) with match indicators\n\
   --json     Full JSON with metadata\n\
@@ -27,7 +27,7 @@ Match indicators in default output:\n\
     ygrep \"search query\"            Search with default AI output\n\
     ygrep \"fn main\" -n 10           Limit to 10 results\n\
     ygrep \"->get(\" -e php           Search PHP files only\n\
-    ygrep search \"fn\\\\s+main\" -r    Regex search\n\
+    ygrep \"fn\\\\s+main\" -r            Regex search\n\
     ygrep search \"api\" --json       JSON output\n\
     ygrep install claude-code       Install for Claude Code\n\n\
 For more info: https://github.com/yetidevworks/ygrep")]
@@ -36,10 +36,9 @@ pub struct Cli {
     pub command: Option<Commands>,
 
     /// Search query (shorthand for `ygrep search <QUERY>`)
-    #[arg(trailing_var_arg = true, num_args = 0..)]
-    pub query: Vec<String>,
+    pub query: Option<String>,
 
-    /// Maximum results (for shorthand search)
+    /// Maximum results
     #[arg(short = 'n', long, default_value = "100")]
     pub limit: usize,
 
@@ -58,6 +57,22 @@ pub struct Cli {
     /// Verbose output
     #[arg(short, long, global = true)]
     pub verbose: bool,
+
+    /// Treat query as regex pattern
+    #[arg(short = 'r', long)]
+    pub regex: bool,
+
+    /// Filter by file extension (e.g., -e rs -e ts)
+    #[arg(short = 'e', long = "ext")]
+    pub extensions: Vec<String>,
+
+    /// Filter by path pattern
+    #[arg(short = 'p', long = "path")]
+    pub paths: Vec<String>,
+
+    /// Text-only search (disable semantic search)
+    #[arg(long)]
+    pub text_only: bool,
 }
 
 #[derive(Subcommand)]
@@ -248,15 +263,14 @@ fn main() -> Result<()> {
             }
         }
         None => {
-            // Default: treat trailing args as search query
-            if cli.query.is_empty() {
+            // Default: treat as search if query provided
+            if let Some(query) = cli.query {
+                commands::search::run(&workspace, &query, cli.limit, cli.extensions, cli.paths, cli.regex, false, cli.text_only, format)?;
+            } else {
                 // No query, show help
                 use clap::CommandFactory;
                 Cli::command().print_help()?;
                 println!();
-            } else {
-                let query = cli.query.join(" ");
-                commands::search::run(&workspace, &query, cli.limit, vec![], vec![], false, false, false, format)?;
             }
         }
     }
