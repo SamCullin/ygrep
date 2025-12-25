@@ -15,6 +15,9 @@ Thumbs.db
 # ygrep data
 .ygrep/
 
+# direnv
+.direnv/
+
 # ML model cache
 .fastembed_cache/
 
