@@ -19,8 +19,15 @@
           inherit version;
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
-          cargoBuildFlags = [ "--package" "ygrep-cli" "--bin" "ygrep" "--no-default-features" ];
-          cargoInstallFlags = [ "--path" "crates/ygrep-cli" "--no-default-features" ];
+          cargoBuildFlags = [
+            "--package" "ygrep-cli"
+            "--bin" "ygrep"
+            "--all-features"
+          ];
+          cargoInstallFlags = [
+            "--path" "crates/ygrep-cli"
+            "--all-features"
+          ];
           doCheck = false;
           strictDeps = true;
           meta = with pkgs.lib; {
