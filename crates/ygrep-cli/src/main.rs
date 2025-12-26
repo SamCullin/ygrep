@@ -27,6 +27,7 @@ Match indicators in default output:\n\
     ygrep \"search query\"            Search with default AI output\n\
     ygrep \"fn main\" -n 10           Limit to 10 results\n\
     ygrep \"->get(\" -e php           Search PHP files only\n\
+    ygrep \"auth\" -p src/api -p tests Filter by path substrings\n\
     ygrep \"fn\\\\s+main\" -r            Regex search\n\
     ygrep search \"api\" --json       JSON output\n\
     ygrep install claude-code       Install for Claude Code\n\n\
@@ -66,7 +67,7 @@ pub struct Cli {
     #[arg(short = 'e', long = "ext")]
     pub extensions: Vec<String>,
 
-    /// Filter by path pattern
+    /// Filter by path prefix/substring (literal match, relative to workspace)
     #[arg(short = 'p', long = "path")]
     pub paths: Vec<String>,
 
@@ -90,7 +91,7 @@ pub enum Commands {
         #[arg(short = 'e', long = "ext")]
         extensions: Vec<String>,
 
-        /// Filter by path pattern
+        /// Filter by path prefix/substring (literal match, relative to workspace)
         #[arg(short = 'p', long = "path")]
         paths: Vec<String>,
 

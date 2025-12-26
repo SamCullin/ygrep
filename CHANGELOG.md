@@ -5,6 +5,15 @@ All notable changes to ygrep will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2025-12-26
+
+### Fix
+- Fixed issue where `--path` filter was not working as expected
+- Fixed issue where `--ext` filter was not working as expected
+### Added
+- Pretty output can now optionally show relevance percentages and match indicators when `--scores` is provided, bringing score visibility to human-readable output.
+- Nix build support
+
 ## [1.0.1] - 2025-12-10
 
 ### Changed

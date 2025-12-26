@@ -6,11 +6,11 @@ members = [
 ]
 
 [workspace.package]
-version = "1.0.1"
+version = "1.1.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/yetidevworks/ygrep"
-authors = ["YetiDevWorks"]
+authors = ["YetiDevWorks", "SamCullin"]
 
 [workspace.dependencies]
 # Internal crates

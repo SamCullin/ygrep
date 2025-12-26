@@ -75,6 +75,14 @@ impl SearchHit {
 }
 
 impl SearchResult {
+    fn match_indicator(match_type: MatchType) -> &'static str {
+        match match_type {
+            MatchType::Hybrid => " +",   // both text and semantic
+            MatchType::Semantic => " ~", // semantic only
+            MatchType::Text => "",
+        }
+    }
+
     /// Create an empty result
     pub fn empty() -> Self {
         Self {
@@ -119,11 +127,7 @@ impl SearchResult {
         for hit in &self.hits {
             // Single line format: path:line (score%) [match_type]
             let score_pct = Self::display_score(hit.score);
-            let match_indicator = match hit.match_type {
-                MatchType::Hybrid => " +",  // both text and semantic
-                MatchType::Semantic => " ~", // semantic only
-                MatchType::Text => "",       // text only (default, no indicator)
-            };
+            let match_indicator = Self::match_indicator(hit.match_type);
             output.push_str(&format!("{}:{} ({:.0}%){}\n", hit.path, hit.line_start, score_pct, match_indicator));
 
             // Show only the first matching line, trimmed
@@ -149,7 +153,7 @@ impl SearchResult {
     }
 
     /// Format results for human-readable output (more context, line numbers)
-    pub fn format_pretty(&self) -> String {
+    pub fn format_pretty(&self, show_scores: bool) -> String {
         let mut output = String::new();
 
         // Header with breakdown
@@ -161,8 +165,14 @@ impl SearchResult {
         output.push_str(&format!("# {} results{}\n\n", self.hits.len(), type_info));
 
         for hit in &self.hits {
-            // Header: path:line_range
-            output.push_str(&format!("{}:{}\n", hit.path, hit.lines_str()));
+            // Header: path:line_range (+ optional score)
+            if show_scores {
+                let score_pct = Self::display_score(hit.score);
+                let match_indicator = Self::match_indicator(hit.match_type);
+                output.push_str(&format!("{}:{} ({:.0}%){}\n", hit.path, hit.lines_str(), score_pct, match_indicator));
+            } else {
+                output.push_str(&format!("{}:{}\n", hit.path, hit.lines_str()));
+            }
 
             // Show first few lines of snippet with line numbers
             for (i, line) in hit.snippet.lines().take(3).enumerate() {

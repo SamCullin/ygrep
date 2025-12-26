@@ -78,13 +78,17 @@ ygrep search "^import" -r          # Line anchors
 # With options
 ygrep search "error" -n 20         # Limit results
 ygrep search "config" -e rs -e toml # Filter by extension
-ygrep search "api" -p src/         # Filter by path
+ygrep search "api" -p src/         # Filter by path prefix/substring
+ygrep search "auth" \
+  -p "crates/ygrep-cli/src/commands" # Multiple --path filters allowed
 
 # Output formats (AI format is default)
 ygrep search "query"               # AI-optimized (default)
 ygrep search "query" --json        # JSON output
 ygrep search "query" --pretty      # Human-readable
 ```
+
+Path filters operate on the relative path stored in the index, so `--path src/api` matches anything under `src/api`, and `--path tests` hits any file whose path contains `tests`. Globs aren't interpreted─pass multiple `--path` flags if you need to cover several directories.
 
 ### Indexing
 
