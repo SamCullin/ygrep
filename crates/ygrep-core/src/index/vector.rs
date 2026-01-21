@@ -1,10 +1,10 @@
 //! HNSW vector index for semantic search
 
-use std::path::{Path, PathBuf};
-use parking_lot::RwLock;
-use hnsw_rs::prelude::*;
 use hnsw_rs::hnswio::HnswIo;
+use hnsw_rs::prelude::*;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 use crate::error::{Result, YgrepError};
 
@@ -52,10 +52,10 @@ impl VectorIndex {
         // - max_layer: log2(max_elements) is optimal
         // - ef_construction: Higher = better quality, slower build
         let hnsw = Hnsw::new(
-            16,         // max_nb_connection (M)
-            10_000,     // initial capacity
-            16,         // max_layer
-            200,        // ef_construction
+            16,     // max_nb_connection (M)
+            10_000, // initial capacity
+            16,     // max_layer
+            200,    // ef_construction
             DistCosine {},
         );
 
@@ -75,12 +75,14 @@ impl VectorIndex {
 
         if doc_ids_path.exists() && hnsw_graph.exists() {
             // Fast path: load compact doc_id index + HNSW dump
-            let doc_index: DocIdIndex = serde_json::from_reader(
-                std::fs::File::open(&doc_ids_path)?
-            ).map_err(|e| YgrepError::Config(format!("Failed to load doc_id index: {}", e)))?;
+            let doc_index: DocIdIndex =
+                serde_json::from_reader(std::fs::File::open(&doc_ids_path)?).map_err(|e| {
+                    YgrepError::Config(format!("Failed to load doc_id index: {}", e))
+                })?;
 
             let reloader = Box::leak(Box::new(HnswIo::new(&path, HNSW_BASENAME)));
-            let hnsw = reloader.load_hnsw::<f32, DistCosine>()
+            let hnsw = reloader
+                .load_hnsw::<f32, DistCosine>()
                 .map_err(|e| YgrepError::Config(format!("Failed to load HNSW index: {}", e)))?;
 
             return Ok(Self {
@@ -98,9 +100,8 @@ impl VectorIndex {
         }
 
         // Load legacy vector data (slow but backwards compatible)
-        let data: VectorData = serde_json::from_reader(
-            std::fs::File::open(&data_path)?
-        ).map_err(|e| YgrepError::Config(format!("Failed to load vector data: {}", e)))?;
+        let data: VectorData = serde_json::from_reader(std::fs::File::open(&data_path)?)
+            .map_err(|e| YgrepError::Config(format!("Failed to load vector data: {}", e)))?;
 
         // Extract doc_ids from vectors
         let doc_ids: Vec<String> = data.vectors.iter().map(|sv| sv.doc_id.clone()).collect();
@@ -133,7 +134,8 @@ impl VectorIndex {
         if embedding.len() != self.dimension {
             return Err(YgrepError::Config(format!(
                 "Embedding dimension mismatch: expected {}, got {}",
-                self.dimension, embedding.len()
+                self.dimension,
+                embedding.len()
             )));
         }
 
@@ -157,7 +159,8 @@ impl VectorIndex {
         if query.len() != self.dimension {
             return Err(YgrepError::Config(format!(
                 "Query dimension mismatch: expected {}, got {}",
-                self.dimension, query.len()
+                self.dimension,
+                query.len()
             )));
         }
 
@@ -175,9 +178,9 @@ impl VectorIndex {
         Ok(neighbors
             .into_iter()
             .filter_map(|n| {
-                doc_ids.get(n.d_id).map(|doc_id| {
-                    (n.d_id as u64, n.distance, doc_id.clone())
-                })
+                doc_ids
+                    .get(n.d_id)
+                    .map(|doc_id| (n.d_id as u64, n.distance, doc_id.clone()))
             })
             .collect())
     }
@@ -191,10 +194,8 @@ impl VectorIndex {
             dimension: self.dimension,
             doc_ids: doc_ids.clone(),
         };
-        serde_json::to_writer(
-            std::fs::File::create(&doc_ids_path)?,
-            &doc_index,
-        ).map_err(|e| YgrepError::Config(format!("Failed to save doc_id index: {}", e)))?;
+        serde_json::to_writer(std::fs::File::create(&doc_ids_path)?, &doc_index)
+            .map_err(|e| YgrepError::Config(format!("Failed to save doc_id index: {}", e)))?;
 
         // Save HNSW graph for fast loading
         let hnsw = self.hnsw.read();

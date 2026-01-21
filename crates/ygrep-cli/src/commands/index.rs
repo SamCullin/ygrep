@@ -3,7 +3,12 @@ use std::path::Path;
 use std::time::Instant;
 use ygrep_core::Workspace;
 
-pub fn run(workspace_path: &Path, rebuild: bool, semantic_flag: bool, text_flag: bool) -> Result<()> {
+pub fn run(
+    workspace_path: &Path,
+    rebuild: bool,
+    semantic_flag: bool,
+    text_flag: bool,
+) -> Result<()> {
     let start = Instant::now();
 
     eprintln!("Indexing {}...", workspace_path.display());
@@ -25,8 +30,7 @@ pub fn run(workspace_path: &Path, rebuild: bool, semantic_flag: bool, text_flag:
             let index_path = workspace.index_path().to_path_buf();
             drop(workspace); // Release the workspace before deleting
             if index_path.exists() {
-                std::fs::remove_dir_all(&index_path)
-                    .context("Failed to remove existing index")?;
+                std::fs::remove_dir_all(&index_path).context("Failed to remove existing index")?;
                 eprintln!("  Cleared old index at {}", index_path.display());
             }
         }
@@ -57,11 +61,11 @@ pub fn run(workspace_path: &Path, rebuild: bool, semantic_flag: bool, text_flag:
     }
 
     // Create or open workspace for indexing
-    let workspace = Workspace::create(workspace_path)
-        .context("Failed to create workspace")?;
+    let workspace = Workspace::create(workspace_path).context("Failed to create workspace")?;
 
     // Index all files
-    let stats = workspace.index_all_with_options(with_embeddings)
+    let stats = workspace
+        .index_all_with_options(with_embeddings)
         .context("Failed to index workspace")?;
 
     let elapsed = start.elapsed();

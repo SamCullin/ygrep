@@ -24,11 +24,11 @@ use std::path::Path;
 use tantivy::Index;
 
 #[cfg(feature = "embeddings")]
-use std::sync::Arc;
-#[cfg(feature = "embeddings")]
-use embeddings::{EmbeddingModel, EmbeddingCache};
+use embeddings::{EmbeddingCache, EmbeddingModel};
 #[cfg(feature = "embeddings")]
 use index::VectorIndex;
+#[cfg(feature = "embeddings")]
+use std::sync::Arc;
 
 /// Embedding dimension for all-MiniLM-L6-v2
 #[cfg(feature = "embeddings")]
@@ -85,7 +85,11 @@ impl Workspace {
 
         // Calculate index directory path based on workspace path hash
         let workspace_hash = hash_path(&root);
-        let index_path = config.indexer.data_dir.join("indexes").join(&workspace_hash);
+        let index_path = config
+            .indexer
+            .data_dir
+            .join("indexes")
+            .join(&workspace_hash);
 
         // Check if workspace has been properly indexed (workspace.json is written after indexing)
         let workspace_indexed = index_path.join("workspace.json").exists();
@@ -94,9 +98,10 @@ impl Workspace {
 
         // If not creating and workspace not indexed, return error
         if !create && !workspace_indexed {
-            return Err(YgrepError::Config(
-                format!("Workspace not indexed: {}", root.display())
-            ));
+            return Err(YgrepError::Config(format!(
+                "Workspace not indexed: {}",
+                root.display()
+            )));
         }
 
         // Open or create Tantivy index
@@ -160,11 +165,8 @@ impl Workspace {
         self.vector_index.clear();
 
         // Phase 1: Index all files with BM25 (fast)
-        let indexer = index::Indexer::new(
-            self.config.indexer.clone(),
-            self.index.clone(),
-            &self.root,
-        )?;
+        let indexer =
+            index::Indexer::new(self.config.indexer.clone(), self.index.clone(), &self.root)?;
 
         let mut walker = fs::FileWalker::new(self.root.clone(), self.config.indexer.clone())?;
 
@@ -175,7 +177,7 @@ impl Workspace {
         // Collect content for batch embedding
         #[cfg(feature = "embeddings")]
         let mut embedding_batch: Vec<(String, String)> = Vec::new(); // (doc_id, content)
-        // Larger batch size = more efficient SIMD/vectorization in ONNX Runtime
+                                                                     // Larger batch size = more efficient SIMD/vectorization in ONNX Runtime
         #[cfg(feature = "embeddings")]
         const BATCH_SIZE: usize = 64;
 
@@ -238,17 +240,20 @@ impl Workspace {
                 self.embedding_model.preload()?;
 
                 let pb = ProgressBar::new(total_docs);
-                pb.set_style(ProgressStyle::default_bar()
-                    .template("  [{bar:40.cyan/blue}] {pos}/{len} ({percent}%)")
-                    .unwrap()
-                    .progress_chars("━╸─"));
+                pb.set_style(
+                    ProgressStyle::default_bar()
+                        .template("  [{bar:40.cyan/blue}] {pos}/{len} ({percent}%)")
+                        .unwrap()
+                        .progress_chars("━╸─"),
+                );
                 pb.enable_steady_tick(std::time::Duration::from_millis(100));
 
                 for chunk in filtered_batch.chunks(BATCH_SIZE) {
                     // Truncate to ~4KB for embedding - sufficient context for code, faster tokenization
                     // Use floor_char_boundary to avoid slicing in the middle of multi-byte UTF-8 characters
                     const EMBED_TRUNCATE: usize = 4096;
-                    let texts: Vec<&str> = chunk.iter()
+                    let texts: Vec<&str> = chunk
+                        .iter()
                         .map(|(_, content)| {
                             if content.len() > EMBED_TRUNCATE {
                                 let boundary = content.floor_char_boundary(EMBED_TRUNCATE);
@@ -263,7 +268,11 @@ impl Workspace {
                         Ok(embeddings) => {
                             for ((doc_id, _), embedding) in chunk.iter().zip(embeddings) {
                                 if let Err(e) = self.vector_index.insert(doc_id, &embedding) {
-                                    tracing::debug!("Failed to insert embedding for {}: {}", doc_id, e);
+                                    tracing::debug!(
+                                        "Failed to insert embedding for {}: {}",
+                                        doc_id,
+                                        e
+                                    );
                                 }
                             }
                             total_embedded += chunk.len();
@@ -297,7 +306,10 @@ impl Workspace {
             "semantic": with_embeddings,
         });
         let metadata_path = self.index_path.join("workspace.json");
-        if let Err(e) = std::fs::write(&metadata_path, serde_json::to_string_pretty(&metadata).unwrap_or_default()) {
+        if let Err(e) = std::fs::write(
+            &metadata_path,
+            serde_json::to_string_pretty(&metadata).unwrap_or_default(),
+        ) {
             tracing::warn!("Failed to save workspace metadata: {}", e);
         }
 
@@ -375,11 +387,8 @@ impl Workspace {
     /// Note: path can be under workspace root OR under a symlink target
     pub fn index_file(&self, path: &Path) -> Result<()> {
         // Create indexer and index the file
-        let indexer = index::Indexer::new(
-            self.config.indexer.clone(),
-            self.index.clone(),
-            &self.root,
-        )?;
+        let indexer =
+            index::Indexer::new(self.config.indexer.clone(), self.index.clone(), &self.root)?;
 
         match indexer.index_file(path) {
             Ok(_doc_id) => {
@@ -406,9 +415,9 @@ impl Workspace {
             .to_string_lossy();
 
         let schema = self.index.schema();
-        let doc_id_field = schema.get_field("doc_id").map_err(|_| {
-            YgrepError::Config("doc_id field not found in schema".to_string())
-        })?;
+        let doc_id_field = schema
+            .get_field("doc_id")
+            .map_err(|_| YgrepError::Config("doc_id field not found in schema".to_string()))?;
 
         let term = Term::from_field_text(doc_id_field, &relative_path);
 
@@ -448,11 +457,8 @@ impl Workspace {
     #[allow(unused_variables)]
     pub fn index_file_with_options(&self, path: &Path, with_embeddings: bool) -> Result<()> {
         // Create indexer and index the file
-        let indexer = index::Indexer::new(
-            self.config.indexer.clone(),
-            self.index.clone(),
-            &self.root,
-        )?;
+        let indexer =
+            index::Indexer::new(self.config.indexer.clone(), self.index.clone(), &self.root)?;
 
         match indexer.index_file(path) {
             Ok(doc_id) => {
@@ -478,7 +484,11 @@ impl Workspace {
                             match self.embedding_model.embed(text) {
                                 Ok(embedding) => {
                                     if let Err(e) = self.vector_index.insert(&doc_id, &embedding) {
-                                        tracing::debug!("Failed to insert embedding for {}: {}", doc_id, e);
+                                        tracing::debug!(
+                                            "Failed to insert embedding for {}: {}",
+                                            doc_id,
+                                            e
+                                        );
                                     } else {
                                         // Save vector index after each file (incremental)
                                         if let Err(e) = self.vector_index.save() {
@@ -487,7 +497,11 @@ impl Workspace {
                                     }
                                 }
                                 Err(e) => {
-                                    tracing::debug!("Failed to generate embedding for {}: {}", doc_id, e);
+                                    tracing::debug!(
+                                        "Failed to generate embedding for {}: {}",
+                                        doc_id,
+                                        e
+                                    );
                                 }
                             }
                         }
@@ -534,6 +548,11 @@ mod tests {
         // Create a test file
         std::fs::write(temp_dir.path().join("test.rs"), "fn main() {}").unwrap();
 
+        // Use create() to create a new workspace, then index it
+        let workspace = Workspace::create(temp_dir.path())?;
+        workspace.index_all()?;
+
+        // Now we can open the indexed workspace
         let workspace = Workspace::open(temp_dir.path())?;
         assert!(workspace.root().exists());
 
@@ -542,22 +561,34 @@ mod tests {
 
     #[test]
     fn test_workspace_index_and_search() -> Result<()> {
-        let temp_dir = tempdir().unwrap();
+        // Use a temp directory but create a subdirectory to avoid "tmp" filtering
+        let temp_base = tempdir().unwrap();
+        let test_dir = temp_base.path().join("test_workspace");
+        std::fs::create_dir_all(&test_dir).unwrap();
 
         // Create test files
-        std::fs::write(temp_dir.path().join("hello.rs"), "fn hello_world() { println!(\"Hello!\"); }").unwrap();
-        std::fs::write(temp_dir.path().join("goodbye.rs"), "fn goodbye_world() { println!(\"Bye!\"); }").unwrap();
+        std::fs::write(
+            test_dir.join("hello.rs"),
+            "fn hello_world() { println!(\"Hello!\"); }",
+        )
+        .unwrap();
+        std::fs::write(
+            test_dir.join("goodbye.rs"),
+            "fn goodbye_world() { println!(\"Bye!\"); }",
+        )
+        .unwrap();
 
+        // Use create_with_config to create a new workspace
         let mut config = Config::default();
-        config.indexer.data_dir = temp_dir.path().join("data");
+        config.indexer.data_dir = temp_base.path().join("data");
 
-        let workspace = Workspace::open_with_config(temp_dir.path(), config)?;
+        let workspace = Workspace::create_with_config(&test_dir, config)?;
 
         // Index
         let stats = workspace.index_all()?;
         assert!(stats.indexed >= 2);
 
-        // Search
+        // Search (should work now since workspace is indexed)
         let result = workspace.search("hello", None)?;
         assert!(!result.is_empty());
         assert!(result.hits.iter().any(|h| h.path.contains("hello")));

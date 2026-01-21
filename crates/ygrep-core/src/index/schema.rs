@@ -1,5 +1,7 @@
-use tantivy::schema::{Schema, STORED, STRING, FAST, TextFieldIndexing, TextOptions, IndexRecordOption};
-use tantivy::tokenizer::{TokenizerManager, TextAnalyzer, LowerCaser, RemoveLongFilter};
+use tantivy::schema::{
+    IndexRecordOption, Schema, TextFieldIndexing, TextOptions, FAST, STORED, STRING,
+};
+use tantivy::tokenizer::{LowerCaser, RemoveLongFilter, TextAnalyzer, TokenizerManager};
 
 /// Name of our custom code tokenizer
 pub const CODE_TOKENIZER: &str = "code";

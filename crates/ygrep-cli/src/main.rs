@@ -1,14 +1,18 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 mod commands;
 mod output;
+mod workspace;
+
+use crate::workspace::{discover_parent_indexes, resolve_workspace};
 
 #[derive(Parser)]
 #[command(name = "ygrep")]
 #[command(about = "Fast indexed code search with optional semantic search")]
-#[command(long_about = "ygrep - Fast indexed code search with optional semantic search\n\n\
+#[command(
+    long_about = "ygrep - Fast indexed code search with optional semantic search\n\n\
 Uses literal text matching by default. Special characters work:\n\
   $variable, ->get(, {% block, @decorator\n\n\
 Use -r/--regex for regex patterns: ygrep \"fn\\\\s+main\" -r\n\n\
@@ -19,7 +23,8 @@ Output formats:\n\
 Match indicators in default output:\n\
   +  hybrid match (text AND semantic)\n\
   ~  semantic only (conceptual match)\n\
-  (none) text match only")]
+  (none) text match only"
+)]
 #[command(version)]
 #[command(after_help = "EXAMPLES:\n\
     ygrep index                     Index current directory (text-only)\n\
@@ -216,20 +221,92 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    // Determine workspace
-    let workspace = cli.workspace.clone().unwrap_or_else(|| {
-        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-    });
+    // Get current directory for relative path resolution
+    let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+
+    // Determine workspace using resolver (respects explicit -C, searches parents)
+    let explicit_workspace: Option<&Path> = cli.workspace.as_deref();
+    let resolved_workspace = match resolve_workspace(explicit_workspace, &current_dir, None) {
+        Ok(ws) => ws,
+        Err(e) => {
+            eprintln!("Error resolving workspace: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Handle case where no workspace is found
+    let workspace = match resolved_workspace {
+        Some(ws) => ws,
+        None => {
+            // No explicit workspace and no parent index found
+            // For commands that need a workspace, show helpful error
+            if cli.query.is_some()
+                || cli
+                    .command
+                    .as_ref()
+                    .map(|c| matches!(c, Commands::Search { .. }))
+                    .unwrap_or(false)
+            {
+                eprintln!("No ygrep index found in current directory or parent directories.");
+                eprintln!();
+                eprintln!("To index this workspace, run:");
+                eprintln!("  ygrep index              # Text-only (fast)");
+                eprintln!(
+                    "  ygrep index --semantic   # With semantic search (slower, better results)"
+                );
+                eprintln!();
+                eprintln!("Or use -C to specify a different workspace:");
+                eprintln!("  ygrep -C /path/to/workspace search \"query\"");
+
+                // Show discovered parent directories (if any were checked)
+                let parents = discover_parent_indexes(&current_dir, None);
+                if !parents.is_empty() {
+                    eprintln!();
+                    eprintln!("Checked directories:");
+                    for (path, indexed) in parents.iter().take(5) {
+                        let rel_path = path.strip_prefix("/").unwrap_or(path);
+                        if *indexed {
+                            eprintln!("  {} [indexed]", rel_path.display());
+                        } else {
+                            eprintln!("  {}", rel_path.display());
+                        }
+                    }
+                    if parents.len() > 5 {
+                        eprintln!("  ... ({} more)", parents.len() - 5);
+                    }
+                }
+                std::process::exit(1);
+            } else {
+                // For non-search commands, use current directory
+                current_dir
+            }
+        }
+    };
 
     // Determine output format from flags
     let format = OutputFormat::from_flags(cli.json, cli.pretty);
 
     // Handle command
     match cli.command {
-        Some(Commands::Search { query, limit, extensions, paths, regex, scores, text_only }) => {
-            commands::search::run(&workspace, &query, limit, extensions, paths, regex, scores, text_only, format)?;
+        Some(Commands::Search {
+            query,
+            limit,
+            extensions,
+            paths,
+            regex,
+            scores,
+            text_only,
+        }) => {
+            commands::search::run(
+                &workspace, &query, limit, extensions, paths, regex, scores, text_only, format,
+            )?;
         }
-        Some(Commands::Index { path, rebuild, semantic, text }) => {
+        Some(Commands::Index {
+            path,
+            rebuild,
+            semantic,
+            text,
+        }) => {
             let target = path.unwrap_or(workspace);
             commands::index::run(&target, rebuild, semantic, text)?;
         }
@@ -240,33 +317,37 @@ fn main() -> Result<()> {
             let target = path.unwrap_or(workspace);
             commands::watch::run(&target)?;
         }
-        Some(Commands::Install(target)) => {
-            match target {
-                InstallTarget::ClaudeCode => commands::install::install_claude_code()?,
-                InstallTarget::Opencode => commands::install::install_opencode()?,
-                InstallTarget::Codex => commands::install::install_codex()?,
-                InstallTarget::Droid => commands::install::install_droid()?,
-            }
-        }
-        Some(Commands::Uninstall(target)) => {
-            match target {
-                InstallTarget::ClaudeCode => commands::install::uninstall_claude_code()?,
-                InstallTarget::Opencode => commands::install::uninstall_opencode()?,
-                InstallTarget::Codex => commands::install::uninstall_codex()?,
-                InstallTarget::Droid => commands::install::uninstall_droid()?,
-            }
-        }
-        Some(Commands::Indexes(cmd)) => {
-            match cmd {
-                IndexesCommand::List => commands::indexes::list()?,
-                IndexesCommand::Clean => commands::indexes::clean()?,
-                IndexesCommand::Remove { identifier } => commands::indexes::remove(&identifier)?,
-            }
-        }
+        Some(Commands::Install(target)) => match target {
+            InstallTarget::ClaudeCode => commands::install::install_claude_code()?,
+            InstallTarget::Opencode => commands::install::install_opencode()?,
+            InstallTarget::Codex => commands::install::install_codex()?,
+            InstallTarget::Droid => commands::install::install_droid()?,
+        },
+        Some(Commands::Uninstall(target)) => match target {
+            InstallTarget::ClaudeCode => commands::install::uninstall_claude_code()?,
+            InstallTarget::Opencode => commands::install::uninstall_opencode()?,
+            InstallTarget::Codex => commands::install::uninstall_codex()?,
+            InstallTarget::Droid => commands::install::uninstall_droid()?,
+        },
+        Some(Commands::Indexes(cmd)) => match cmd {
+            IndexesCommand::List => commands::indexes::list()?,
+            IndexesCommand::Clean => commands::indexes::clean()?,
+            IndexesCommand::Remove { identifier } => commands::indexes::remove(&identifier)?,
+        },
         None => {
             // Default: treat as search if query provided
             if let Some(query) = cli.query {
-                commands::search::run(&workspace, &query, cli.limit, cli.extensions, cli.paths, cli.regex, false, cli.text_only, format)?;
+                commands::search::run(
+                    &workspace,
+                    &query,
+                    cli.limit,
+                    cli.extensions,
+                    cli.paths,
+                    cli.regex,
+                    false,
+                    cli.text_only,
+                    format,
+                )?;
             } else {
                 // No query, show help
                 use clap::CommandFactory;

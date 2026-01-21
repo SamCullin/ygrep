@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::PathBuf;
 
@@ -66,7 +66,8 @@ const HOOK_JSON: &str = r#"{
 
 /// Generate plugin manifest with current version
 fn plugin_json() -> String {
-    format!(r#"{{
+    format!(
+        r#"{{
   "name": "ygrep",
   "description": "Fast indexed code search for Claude Code",
   "version": "{}",
@@ -74,12 +75,15 @@ fn plugin_json() -> String {
     "name": "YetiDevWorks"
   }},
   "hooks": "./hooks/hook.json"
-}}"#, env!("CARGO_PKG_VERSION"))
+}}"#,
+        env!("CARGO_PKG_VERSION")
+    )
 }
 
 /// Generate marketplace manifest with current version
 fn marketplace_json() -> String {
-    format!(r#"{{
+    format!(
+        r#"{{
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "ygrep-local",
   "owner": {{
@@ -97,7 +101,9 @@ fn marketplace_json() -> String {
       "skills": ["./skills/ygrep"]
     }}
   ]
-}}"#, env!("CARGO_PKG_VERSION"))
+}}"#,
+        env!("CARGO_PKG_VERSION")
+    )
 }
 
 fn home_dir() -> Result<PathBuf> {
@@ -122,13 +128,17 @@ pub fn install_claude_code() -> Result<()> {
     fs::create_dir_all(&hooks_dir).context("Failed to create hooks directory")?;
     fs::create_dir_all(&skills_dir).context("Failed to create skills directory")?;
     fs::create_dir_all(&claude_plugin_dir).context("Failed to create .claude-plugin directory")?;
-    fs::create_dir_all(&marketplace_plugin_dir).context("Failed to create marketplace .claude-plugin directory")?;
+    fs::create_dir_all(&marketplace_plugin_dir)
+        .context("Failed to create marketplace .claude-plugin directory")?;
 
     // Write plugin files
     fs::write(hooks_dir.join("hook.json"), HOOK_JSON)?;
     fs::write(skills_dir.join("SKILL.md"), SKILL_CONTENT)?;
     fs::write(claude_plugin_dir.join("plugin.json"), plugin_json())?;
-    fs::write(marketplace_plugin_dir.join("marketplace.json"), marketplace_json())?;
+    fs::write(
+        marketplace_plugin_dir.join("marketplace.json"),
+        marketplace_json(),
+    )?;
 
     // Update known_marketplaces.json
     let known_path = plugins_dir.join("known_marketplaces.json");
@@ -231,7 +241,10 @@ pub fn uninstall_claude_code() -> Result<()> {
     if settings_path.exists() {
         let content = fs::read_to_string(&settings_path)?;
         if let Ok(mut settings) = serde_json::from_str::<serde_json::Value>(&content) {
-            if let Some(enabled) = settings.get_mut("enabledPlugins").and_then(|p| p.as_object_mut()) {
+            if let Some(enabled) = settings
+                .get_mut("enabledPlugins")
+                .and_then(|p| p.as_object_mut())
+            {
                 enabled.remove("ygrep@ygrep-local");
                 fs::write(&settings_path, serde_json::to_string_pretty(&settings)?)?;
             }
@@ -253,7 +266,8 @@ pub fn install_opencode() -> Result<()> {
     fs::create_dir_all(&tool_dir)?;
 
     // Write tool definition
-    let tool_content = format!(r#"
+    let tool_content = format!(
+        r#"
 import {{ tool }} from "@opencode-ai/plugin"
 
 const SKILL = `{}`
@@ -268,7 +282,9 @@ export default tool({{
     const result = await Bun.$`ygrep search -n ${{args.n}} "${{args.q}}"`.text()
     return result.trim()
   }},
-}})"#, SKILL_CONTENT.replace('`', "\\`"));
+}})"#,
+        SKILL_CONTENT.replace('`', "\\`")
+    );
 
     fs::write(tool_dir.join("ygrep.ts"), tool_content)?;
 
@@ -296,7 +312,11 @@ pub fn uninstall_opencode() -> Result<()> {
     println!("Uninstalling ygrep from OpenCode...");
 
     let home = home_dir()?;
-    let tool_path = home.join(".config").join("opencode").join("tool").join("ygrep.ts");
+    let tool_path = home
+        .join(".config")
+        .join("opencode")
+        .join("tool")
+        .join("ygrep.ts");
 
     if tool_path.exists() {
         fs::remove_file(&tool_path)?;
@@ -348,7 +368,9 @@ pub fn uninstall_codex() -> Result<()> {
     if agents_path.exists() {
         let content = fs::read_to_string(&agents_path)?;
         // Remove the ygrep skill section
-        let updated = content.replace(SKILL_CONTENT, "").replace(&format!("\n{}", SKILL_CONTENT), "");
+        let updated = content
+            .replace(SKILL_CONTENT, "")
+            .replace(&format!("\n{}", SKILL_CONTENT), "");
         if updated.trim().is_empty() {
             fs::remove_file(&agents_path)?;
         } else {
