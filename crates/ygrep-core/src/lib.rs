@@ -213,7 +213,7 @@ impl Workspace {
         indexer.commit()?;
 
         // Track embedded count
-        let mut total_embedded = 0usize;
+        let total_embedded = 0usize;
 
         // Phase 2: Generate embeddings in batches (if enabled)
         #[cfg(feature = "embeddings")]

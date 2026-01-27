@@ -54,6 +54,10 @@ impl FileWalker {
 
                 // Skip directories matching ignore patterns
                 if e.file_type().is_dir() {
+                    if e.path().join(".fastembed_cache").is_dir() {
+                        return false;
+                    }
+
                     let dir_name = e.file_name().to_string_lossy();
 
                     // Quick check for common ignored directories
@@ -461,5 +465,34 @@ mod tests {
         assert!(glob_match("**/.git/**", ".git/config"));
         assert!(glob_match("*.log", "debug.log"));
         assert!(!glob_match("*.log", "debug.txt"));
+    }
+
+    #[test]
+    fn test_walk_skips_fastembed_cache() {
+        let temp_base = tempdir().unwrap();
+        let test_dir = temp_base.path().join("test_workspace");
+        std::fs::create_dir_all(&test_dir).unwrap();
+
+        let cache_dir = test_dir.join("subdir/.fastembed_cache");
+        std::fs::create_dir_all(&cache_dir).unwrap();
+        std::fs::write(cache_dir.join("skip.rs"), "fn skip() {}").unwrap();
+        std::fs::write(test_dir.join("subdir/ignored.rs"), "fn ignored() {}").unwrap();
+
+        std::fs::create_dir_all(test_dir.join("src")).unwrap();
+        std::fs::write(test_dir.join("src/lib.rs"), "pub fn kept() {}").unwrap();
+
+        let mut config = IndexerConfig::default();
+        config.ignore_patterns.clear();
+        let mut walker = FileWalker::new(test_dir.clone(), config).unwrap();
+
+        let entries: Vec<_> = walker.walk().collect();
+        let paths: Vec<String> = entries
+            .iter()
+            .map(|entry| entry.path.to_string_lossy().to_string())
+            .collect();
+
+        assert!(paths.iter().any(|path| path.contains("src/lib.rs")));
+        assert!(paths.iter().all(|path| !path.contains(".fastembed_cache")));
+        assert!(paths.iter().all(|path| !path.contains("subdir/ignored.rs")));
     }
 }
