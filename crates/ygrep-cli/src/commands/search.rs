@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
 use std::path::Path;
-use ygrep_core::search::{MatchType, SearchResult};
+use ygrep_core::search::{MatchType, SearchHit, SearchResult};
 use ygrep_core::Workspace;
 
+use crate::output::format_tree_heatmap;
 use crate::OutputFormat;
 
 pub fn run(
@@ -14,6 +15,10 @@ pub fn run(
     use_regex: bool,
     show_scores: bool,
     text_only: bool,
+    tree: bool,
+    depth: Option<usize>,
+    tree_min_score: Option<f32>,
+    tree_top: Option<usize>,
     format: OutputFormat,
 ) -> Result<()> {
     // Open existing workspace (fails if not indexed)
@@ -67,6 +72,13 @@ pub fn run(
     // Apply filters to hybrid results (text search is a no-op)
     apply_filters(&mut result, &extension_filters, &path_filters);
 
+    if tree {
+        let tree_hits = apply_tree_filters(&result.hits, tree_min_score, tree_top);
+        let output = format_tree_heatmap(&tree_hits, depth);
+        print!("{}", output);
+        return Ok(());
+    }
+
     // Output results
     let output = match format {
         OutputFormat::Ai => result.format_ai(),
@@ -118,18 +130,45 @@ fn apply_filters(result: &mut SearchResult, extensions: &[String], paths: &[Stri
         .count();
 }
 
+fn apply_tree_filters(
+    hits: &[SearchHit],
+    min_score: Option<f32>,
+    top: Option<usize>,
+) -> Vec<SearchHit> {
+    let min_score = min_score.unwrap_or(0.0).clamp(0.0, 1.0);
+    let min_display_score = min_score * 100.0;
+    let mut filtered: Vec<SearchHit> = hits
+        .iter()
+        .filter(|hit| display_score(hit.score) >= min_display_score)
+        .cloned()
+        .collect();
+    filtered.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    if let Some(limit) = top {
+        filtered.truncate(limit);
+    }
+    filtered
+}
+
+fn display_score(score: f32) -> f32 {
+    (score * 3000.0).min(99.9)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use ygrep_core::search::{MatchType, SearchHit};
 
-    fn make_hit(path: &str, match_type: MatchType) -> SearchHit {
+    fn make_hit(path: &str, match_type: MatchType, score: f32) -> SearchHit {
         SearchHit {
             path: path.to_string(),
             line_start: 1,
             line_end: 1,
             snippet: "example".to_string(),
-            score: 0.5,
+            score,
             is_chunk: false,
             doc_id: path.to_string(),
             match_type,
@@ -149,8 +188,8 @@ mod tests {
     #[test]
     fn filters_by_extension() {
         let mut result = make_result(vec![
-            make_hit("src/main.rs", MatchType::Text),
-            make_hit("src/lib.ts", MatchType::Semantic),
+            make_hit("src/main.rs", MatchType::Text, 0.5),
+            make_hit("src/lib.ts", MatchType::Semantic, 0.5),
         ]);
 
         let extensions = vec!["rs".to_string()];
@@ -165,8 +204,8 @@ mod tests {
     #[test]
     fn filters_by_path_pattern() {
         let mut result = make_result(vec![
-            make_hit("src/main.rs", MatchType::Hybrid),
-            make_hit("tests/test.rs", MatchType::Semantic),
+            make_hit("src/main.rs", MatchType::Hybrid, 0.5),
+            make_hit("tests/test.rs", MatchType::Semantic, 0.5),
         ]);
 
         let paths = vec!["tests".to_string()];
@@ -176,5 +215,20 @@ mod tests {
         assert_eq!(result.hits[0].path, "tests/test.rs");
         assert_eq!(result.semantic_hits, 1);
         assert_eq!(result.text_hits, 0);
+    }
+
+    #[test]
+    fn tree_filters_by_score_and_top() {
+        let hits = vec![
+            make_hit("src/high.rs", MatchType::Text, 0.02),
+            make_hit("src/low.rs", MatchType::Text, 0.006),
+            make_hit("src/mid.rs", MatchType::Text, 0.015),
+        ];
+
+        let filtered = apply_tree_filters(&hits, Some(0.5), Some(2));
+
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(filtered[0].path, "src/high.rs");
+        assert_eq!(filtered[1].path, "src/mid.rs");
     }
 }

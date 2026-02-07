@@ -60,6 +60,22 @@ pub struct Cli {
     #[arg(long, global = true, conflicts_with = "json")]
     pub pretty: bool,
 
+    /// Output aggregated results as a tree heatmap
+    #[arg(long, alias = "heatmap", conflicts_with_all = ["json", "pretty"])]
+    pub tree: bool,
+
+    /// Depth cutoff for tree output (path segments from workspace root)
+    #[arg(long, value_name = "N", requires = "tree")]
+    pub depth: Option<usize>,
+
+    /// Minimum score threshold for tree output (0.0-1.0 == 0-100%)
+    #[arg(long = "tree-min-score", value_name = "SCORE", requires = "tree")]
+    pub tree_min_score: Option<f32>,
+
+    /// Limit tree output to top N hits by score
+    #[arg(long = "tree-top", value_name = "N", requires = "tree")]
+    pub tree_top: Option<usize>,
+
     /// Verbose output
     #[arg(short, long, global = true)]
     pub verbose: bool,
@@ -111,6 +127,22 @@ pub enum Commands {
         /// Text-only search (disable semantic search)
         #[arg(long)]
         text_only: bool,
+
+        /// Output aggregated results as a tree heatmap
+        #[arg(long, alias = "heatmap", conflicts_with_all = ["json", "pretty"])]
+        tree: bool,
+
+        /// Depth cutoff for tree output (path segments from workspace root)
+        #[arg(long, value_name = "N", requires = "tree")]
+        depth: Option<usize>,
+
+        /// Minimum score threshold for tree output (0.0-1.0 == 0-100%)
+        #[arg(long = "tree-min-score", value_name = "SCORE", requires = "tree")]
+        tree_min_score: Option<f32>,
+
+        /// Limit tree output to top N hits by score
+        #[arg(long = "tree-top", value_name = "N", requires = "tree")]
+        tree_top: Option<usize>,
     },
 
     /// Build search index for a workspace (run before searching)
@@ -296,9 +328,25 @@ fn main() -> Result<()> {
             regex,
             scores,
             text_only,
+            tree,
+            depth,
+            tree_min_score,
+            tree_top,
         }) => {
             commands::search::run(
-                &workspace, &query, limit, extensions, paths, regex, scores, text_only, format,
+                &workspace,
+                &query,
+                limit,
+                extensions,
+                paths,
+                regex,
+                scores,
+                text_only,
+                tree,
+                depth,
+                tree_min_score,
+                tree_top,
+                format,
             )?;
         }
         Some(Commands::Index {
@@ -346,6 +394,10 @@ fn main() -> Result<()> {
                     cli.regex,
                     false,
                     cli.text_only,
+                    cli.tree,
+                    cli.depth,
+                    cli.tree_min_score,
+                    cli.tree_top,
                     format,
                 )?;
             } else {
